@@ -192,6 +192,7 @@ class ROIsCreator(VLayoutWidget):
     AVAIL_MODES: List[SegmentorWidget] = [
         CellposeSingleSegmentorWidget,
         CellposeMultiSegmentorWidget,
+        ThresholdSegmentorWidget,
         ManualSegmentorWidget,
     ]
     def __init__(self, *args, **kwargs):

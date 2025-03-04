@@ -120,8 +120,8 @@ class PolySelectionWidget(VLayoutWidget):
         'Area': lambda poly, img: 
             poly.area()
         ,
-        'Intensity': lambda poly, img: 
-            img[draw_poly(np.zeros(img.shape, dtype=np.uint8), poly)].mean()
+        'Intensity (max)': lambda poly, img: 
+            img[draw_poly(np.zeros(img.shape, dtype=np.uint8), poly)].max()
         ,
     }
 
@@ -156,12 +156,14 @@ class PolySelectionWidget(VLayoutWidget):
     ''' Private '''
 
     def _recompute(self):
-        pdb.set_trace()
-        mask = np.logical_and.reduce([
-            filt.mask for filt in self._filters.values()
-        ])
-        # print('Polygons selected')
-        self.processed.emit(self._polys[mask])
+        if self._polys.size > 0:
+            mask = np.logical_and.reduce([
+                filt.mask for filt in self._filters.values()
+            ])
+            self.processed.emit(self._polys[mask])
+        else:
+            print('No polygons to process')
+            self.processed.emit([])
 
 
 class AutoSegmentorWidget(SegmentorWidget):
@@ -211,3 +213,25 @@ class AutoSegmentorWidget(SegmentorWidget):
 
     def _recompute_auto(self):
         self._poly_sel.setData(self._img, self.recompute_auto()) # _set_proposals() called through bubbled event
+
+def mask_to_polygons(mask: np.ndarray) -> List[PlanarPolygon]:
+    polys = []
+    slices = find_objects(mask)
+    for i, si in enumerate(slices):
+        if si is None:
+            continue
+        sr, sc = si
+        i_mask = mask[sr, sc] == (i+1)
+        _, contours, __ = upolygon.find_contours(i_mask.astype(np.uint8))
+        contours = [np.array(c).reshape(-1, 2) for c in contours] # Convert X, Y, X, Y,... to X, Y
+        if len(contours) > 0:
+            contour = max(contours, key=lambda c: cv2.contourArea(c)) # Find max-area contour
+            if contour.shape[0] < 3:
+                continue
+            contour = contour + np.array([sc.start, sr.start])
+            try:
+                poly = PlanarPolygon(contour)
+                polys.append(poly)
+            except:
+                pass
+    return polys

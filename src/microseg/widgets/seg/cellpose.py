@@ -18,7 +18,6 @@ from microseg.widgets.pg import ImagePlotWidget
 from microseg.utils.image import rescale_intensity
 import microseg.utils.mask as mutil
 from .base import *
-from .manual import ROICreatorWidget
 from .auto import *
 
 class CellposeMultiSegmentorWidget(AutoSegmentorWidget):
@@ -114,26 +113,7 @@ class CellposeMultiSegmentorWidget(AutoSegmentorWidget):
         )[0]
         print(f'Cellpose mask computed with diameter {diam}, cellprob {cellprob}')
         assert mask.shape == img.shape[:2]
-        cp_polys = []
-        slices = find_objects(mask)
-        for i, si in enumerate(slices):
-            if si is None:
-                continue
-            sr, sc = si
-            i_mask = mask[sr, sc] == (i+1)
-            _, contours, __ = upolygon.find_contours(i_mask.astype(np.uint8))
-            contours = [np.array(c).reshape(-1, 2) for c in contours] # Convert X, Y, X, Y,... to X, Y
-            if len(contours) > 0:
-                contour = max(contours, key=lambda c: cv2.contourArea(c)) # Find max-area contour
-                if contour.shape[0] < 3:
-                    continue
-                contour = contour + np.array([sc.start, sr.start])
-                try:
-                    poly = PlanarPolygon(contour)
-                    poly = poly.set_res(1/scale, 1/scale)
-                    cp_polys.append(poly)
-                except:
-                    pass
+        cp_polys = [p.set_res(1/scale, 1/scale) for p in mask_to_polygons(mask)]
         print(f'Cellpose found {len(cp_polys)} valid polygons')
         return cp_polys
 
