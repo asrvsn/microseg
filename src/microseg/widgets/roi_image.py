@@ -414,15 +414,11 @@ class ROIsCreator(VLayoutWidget):
 
     def _set_proposing(self, bit: bool):
         self._is_proposing = bit
+        self._draw_btn.setEnabled(not bit)
+        self._mode_drop.setEnabled(not bit)
+        self._widget.setDrawable(not bit)
         if bit:
-            self._draw_btn.setEnabled(False)
-            self._mode_drop.setEnabled(False)
-            self._widget.setDrawable(False)
             self._set_show_rois(True)
-        else:
-            self._draw_btn.setEnabled(True)
-            self._mode_drop.setEnabled(True)
-            self._widget.setDrawable(True)
 
     def _set_show_rois(self, bit: bool):
         self._widget.setShowROIs(bit)

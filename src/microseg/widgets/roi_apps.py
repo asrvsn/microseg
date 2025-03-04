@@ -130,6 +130,8 @@ class ZStackObjectViewer(gl.GLViewWidget):
     '''
     3D viewer of multiple objects with current z-plane rendered
     '''
+    nav_key_pressed = QtCore.Signal(object)
+    start_proposing = QtCore.Signal()
     mesh_opts: dict = {
         # 'shader': 'normalColor',
         'glOptions': 'opaque',
@@ -146,6 +148,7 @@ class ZStackObjectViewer(gl.GLViewWidget):
     def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, *args, **kwargs): 
         super().__init__(*args, **kwargs)
         self._imgsize = imgsize # XYZ
+        self._zmax = imgsize[2]
         self._voxsize = voxsize # XYZ
         self._z_aniso = voxsize[2] / voxsize[0] # Rendered in space where XY are unit-size pixels, scale z accordingly
         self.setWindowTitle('Z-Slice Object Viewer')
@@ -155,12 +158,18 @@ class ZStackObjectViewer(gl.GLViewWidget):
         viewsize[2] *= self._z_aniso
         self.opts['center'] = pg.Vector(*(viewsize/2))
         self.setCameraPosition(distance=viewsize.max() * 1.1) # Zoom out sufficiently
-        self._plane = None
         self._cursor_pt = gl.GLScatterPlotItem(**self.cursor_opts)
         self.addItem(self._cursor_pt)
+
+        # State
+        self._z = 0
+        self._z_ = 0
+        self._plane = None
         self._meshes = []
+        self._is_proposing = False
 
     def setROIs(self, rois: List[List[ROI]]):
+        assert not self._is_proposing
         # Remove existing meshes
         for mesh in self._meshes:
             self.removeItem(mesh)
@@ -196,6 +205,7 @@ class ZStackObjectViewer(gl.GLViewWidget):
             self._meshes.append(mesh)
 
     def setZ(self, z: int, img: np.ndarray):
+        self._z = z
         if not self._plane is None:
             self.removeItem(self._plane)
         img = img.astype(np.float32)  # Convert to float for proper scaling
@@ -218,6 +228,26 @@ class ZStackObjectViewer(gl.GLViewWidget):
                 break  # Close only the first detected instance
         evt.accept()  
 
+    def keyPressEvent(self, evt):
+        if evt.key() in [Qt.Key_Left, Qt.Key_Right]:
+            if evt.modifiers() & Qt.ShiftModifier:
+                delta = 1 if evt.key() == Qt.Key_Right else -1
+                z_ = self._z + delta
+                if 0 <= z_ < self._zmax:
+                    self._z_ = z_
+                    self._start_proposing()
+            else:
+                self.nav_key_pressed.emit(evt)
+        else:
+            super().keyPressEvent(evt)
+
+    ''' Privates '''
+
+    def _start_proposing(self):
+        self._is_proposing = True
+        # some stuff
+        self.start_proposing.emit()
+
 class ZStackSegmentorApp(ImageSegmentorApp):
     '''
     Segment 3-dimensional structures using iterated 2-dimensional segmentation and fusion/registration
@@ -234,7 +264,6 @@ class ZStackSegmentorApp(ImageSegmentorApp):
             - make sure to use correct z-position using image metadata (voxel aspect ratio)
         b. Render current z-plane in view
         c. Render position of cursor in z-plane (might need to bubble up from lower level)
-    4. Upgrade 2D segmentation to include intensity graph + filters
     '''
     # TODO: better approach than overriding private
     def _pre_super_init(self):
@@ -242,7 +271,11 @@ class ZStackSegmentorApp(ImageSegmentorApp):
         voxsize = get_voxel_size(self._img_path, fmt='XYZ') # Physical voxel sizes
         self._viewer = ZStackObjectViewer(imgsize, voxsize)
         self._viewer.show()
-        self._creator.image_changed.connect(lambda img: self._viewer.setZ(self._z, img.T)) # Transpose?
+
+        # Listeners
+        self._creator.image_changed.connect(lambda img: self._viewer.setZ(self._z, img.T))
+        self._viewer.nav_key_pressed.connect(self.keyPressEvent)
+        self._viewer.start_proposing.connect(lambda: self.setEnabled(False))
 
     def closeEvent(self, evt):
         if not self._viewer is None:
