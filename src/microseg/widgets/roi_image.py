@@ -190,8 +190,7 @@ class ROIsCreator(VLayoutWidget):
     delete = QtCore.Signal(object) # Set[int], labels of deleted ROIs
     image_changed = QtCore.Signal(object) # np.ndarray XY
     AVAIL_MODES: List[SegmentorWidget] = [
-        CellposeSingleSegmentorWidget,
-        CellposeMultiSegmentorWidget,
+        CellposeSegmentorWidget,
         ThresholdSegmentorWidget,
         ManualSegmentorWidget,
     ]

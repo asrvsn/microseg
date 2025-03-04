@@ -321,8 +321,8 @@ class HistogramFilterWidget(pg.PlotWidget):
     def __init__(self, *args, title='Histogram', **kwargs):
         super().__init__(*args, **kwargs)
         # Set fixed height and margins
-        self.setFixedHeight(150)  # Increase widget height
-        self.setContentsMargins(10, 10, 10, 10)  # Add margins for better handle interaction
+        self.setFixedHeight(100)  
+        self.setFixedWidth(220)
         
         # Widgets
         ## Plot
@@ -333,30 +333,35 @@ class HistogramFilterWidget(pg.PlotWidget):
         ## Histogram
         self._hist = pitem.plot([], [], stepMode=True, fillLevel=0, brush=(0,0,255,150))
         ## Region selection
-        self._region = pg.LinearRegionItem(orientation='horizontal')
+        self._region = pg.LinearRegionItem(orientation='vertical')
         self._region.setZValue(10)
         pitem.addItem(self._region)
-
-        # Listeners
-        self._region.sigRegionChanged.connect(self._on_region_changed)
 
         # State
         self._hist_data = None
         self._mask = None
 
     def setData(self, data: np.ndarray, n_per_bin: int=10):
+        # Temporarily disconnect the region change signal if it exists
+        try:
+            self._region.sigRegionChanged.disconnect(self._on_region_changed)
+        except TypeError:
+            pass  # Signal wasn't connected yet
+        
         assert n_per_bin > 0
         if len(data) > 0:
             self._hist_data = data
             n_bins = max(1, len(data) // n_per_bin)
             hist, bin_edges = np.histogram(data, bins=n_bins)
-            bin_centers = (bin_edges[1:] + bin_edges[:-1]) / 2
-            self._hist.setData(bin_centers, hist)
-            self._region.setRegion([data.min(), data.max()])
+            bin_edges -= bin_edges[0]
+            bin_edges /= bin_edges[-1] / 100 # Set to percentile
+            self._hist.setData(bin_edges, hist)
+            self._region.setRegion([0, 100]) 
         else:
             self._hist.setData([], [])
             self._region.setRegion([0, 0])  # Reset region
         self._mask = np.full(data.shape, True)
+        self._region.sigRegionChanged.connect(self._on_region_changed)
 
     def _on_region_changed(self):
         if self._hist_data is None or len(self._hist_data) == 0:

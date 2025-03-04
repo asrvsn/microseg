@@ -20,7 +20,7 @@ import microseg.utils.mask as mutil
 from .base import *
 from .auto import *
 
-class CellposeMultiSegmentorWidget(AutoSegmentorWidget):
+class CellposeSegmentorWidget(AutoSegmentorWidget):
     USE_GPU: bool=False
     MODELS: List[str] = [
         'cyto3',
@@ -54,7 +54,7 @@ class CellposeMultiSegmentorWidget(AutoSegmentorWidget):
     ''' Overrides '''
 
     def name(self) -> str:
-        return 'Cellpose (multi)'
+        return 'Cellpose'
     
     def auto_name(self) -> str:
         return 'Cellpose'
@@ -101,67 +101,6 @@ class CellposeMultiSegmentorWidget(AutoSegmentorWidget):
             gpu=self.USE_GPU
         )
 
-
-class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
-    '''
-    Segment a single object by zooming in 
-    '''
-    WIN_MULT: float=1.5
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._subimg_wdg = VGroupBox('Image input')
-        self._subimg_view = QImageWidget()
-        self._subimg_wdg.addWidget(self._subimg_view)
-        self._drawing_box = QCheckBox('Show drawing')
-        self._subimg_wdg.addWidget(self._drawing_box)
-        self._main.insertWidget(0, self._subimg_wdg)
-
-        # State
-        self._drawing_box.setChecked(False)
-
-        # Listeners
-        self._drawing_box.toggled.connect(lambda: self._render_img(self._poly))
-        self._img_proc.processed.connect(lambda: self._render_img(self._poly))
-
-    def name(self) -> str:
-        return 'Cellpose (single)'
-    
-    def process_img(self, img: np.ndarray, poly: PlanarPolygon):
-        center = poly.centroid() 
-        radius = np.linalg.norm(poly.vertices - center, axis=1).max() * self.WIN_MULT
-        # Select image by center +- radius 
-        xmin = max(0, math.floor(center[0] - radius))
-        xmax = min(img.shape[1], math.ceil(center[0] + radius))
-        ymin = max(0, math.floor(center[1] - radius))
-        ymax = min(img.shape[0], math.ceil(center[1] + radius))
-        # Store offset
-        self._offset = np.array([xmin, ymin])
-        self._center = np.array([xmax - xmin, ymax - ymin]) / 2
-        subimg = img[ymin:ymax, xmin:xmax].copy()
-        super().process_img(subimg, poly)
-        self._render_img(poly)
-    
-    def _render_img(self, poly: PlanarPolygon):
-        subimg = self._img_proc.processed_img.copy()
-        scale = self._img_proc.scale
-        offset = self._offset
-        # Render
-        ar = subimg.shape[0] / subimg.shape[1]
-        self._subimg_view.setFixedSize(220, round(220 * ar))
-        if self._drawing_box.isChecked():
-            subimg = mutil.draw_outline(subimg, (poly - offset).set_res(scale, scale))
-        self._subimg_view.setImage(subimg)  
-    
-    # TODO: need to move this logic up to auto.py
-    def _compute_cp_polys(self, subimg: np.ndarray, scale: float, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        # Compute cellpose on sub-img & translate back
-        polys = super()._compute_cp_polys(subimg, scale, poly - self._offset)
-        if len(polys) > 0:
-            poly = min(polys, key=lambda p: np.linalg.norm(p.centroid() - self._center))
-            return [poly + self._offset]
-        else:
-            return []
         
 ## TODO: add spectral clustering for single-segment
 ## https://scikit-learn.org/dev/auto_examples/cluster/plot_segmentation_toy.html
