@@ -181,10 +181,9 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         pass
 
     @abc.abstractmethod
-    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+    def recompute(self):
         '''
-        From a prompt image and polygon, produce a list of candidate polygons, given the current settings.
-        Should fire the propose() signal at least once synchronously using these ROIs.
+        From a prompt image and polygon, fire the propose() signal at some point if you want something to happen.
         '''
         pass
 
@@ -221,21 +220,20 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         Lets the user to fire propose() or cancel() using buttons.
         '''
-        self._img = img
-        self._poly = poly
+        self._img, self._poly = img, poly
         # Spawn in relevant location
         self.show()
         screen = self.screen()
         if not screen is None:
             # Align to top right
             self.move(screen.geometry().right() - self.width(), screen.geometry().top())
-        self._set_proposals(self.make_proposals(self._img, self._poly))
+        self.recompute(img, poly)
 
     def prompt_immediate(self, img: np.ndarray, poly: PlanarPolygon):
         '''
         Fires the add() signal immediately after proposing.
         '''
-        self._set_proposals(self.make_proposals(img, poly))
+        self.recompute(img, poly)
         self.add.emit(self._roi_creator.getROIs())
         self.reset_state()
 
@@ -246,6 +244,13 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self._set_proposals([
             p for i, p in enumerate(self._proposed_polys) if i not in indices
         ])
+
+    def set_proposals(self, polys: List[PlanarPolygon]):
+        '''
+        Sets internal state and fires propose() through bubbling.
+        '''
+        self._proposed_polys = polys
+        self._roi_creator.setPolys(polys) # propose() event will bubble through ROI editor
 
     ''' Private methods '''
 
@@ -262,7 +267,3 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self.hide()
         self.cancel.emit()
         self.reset_state()
-
-    def _set_proposals(self, polys: List[PlanarPolygon]):
-        self._proposed_polys = polys
-        self._roi_creator.setPolys(polys) # propose() event will bubble through ROI editor

@@ -9,5 +9,5 @@ class ManualSegmentorWidget(SegmentorWidget):
     def name(self) -> str:
         return 'Manual'
     
-    def make_proposals(self, img: ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        return [poly]
+    def recompute(self, img: ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+        self.set_proposals([poly])

@@ -131,19 +131,3 @@ def delete_label(mask: np.ndarray, label: int) -> np.ndarray:
     mask = mask.copy()
     mask[mask == label] = 0
     return mask
-
-def draw_poly(mask: np.ndarray, poly: List[int], label: int) -> np.ndarray:
-    '''
-    Draw polygon on mask with coordinates given in [x,y,x,y...] format
-    '''
-    return upolygon.draw_polygon(mask, [poly], label)
-
-def draw_polygon(mask: np.ndarray, poly: PlanarPolygon) -> np.ndarray:
-    # print(mask.dtype)
-    return draw_poly(mask, poly.vertices.flatten().tolist(), 1)
-
-def draw_outline(img: np.ndarray, poly: PlanarPolygon) -> np.ndarray:
-    mask = draw_polygon(np.zeros(img.shape[:2], dtype=np.uint8), poly)
-    mask = (mask - binary_erosion(mask, iterations=1)).astype(bool)
-    img[mask] = 1
-    return img

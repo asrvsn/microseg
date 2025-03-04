@@ -19,8 +19,6 @@ import traceback
 from matgeo import PlanarPolygon, Circle, Ellipse
 from microseg.widgets.pg import *
 from microseg.utils.image import rescale_intensity
-from microseg.utils.mask import draw_poly
-import microseg.utils.mask as mutil
 from .base import *
 from .manual import ROICreatorWidget
 
@@ -121,7 +119,7 @@ class PolySelectionWidget(VLayoutWidget):
             poly.area()
         ,
         'Intensity (max)': lambda poly, img: 
-            img[draw_poly(np.zeros(img.shape, dtype=np.uint8), poly)].max()
+            img[poly.to_mask(img.shape)].max()
         ,
     }
 
@@ -194,10 +192,17 @@ class AutoSegmentorWidget(SegmentorWidget):
         self._main.addSpacing(10)
 
         # Listeners
-        self._recompute_btn.clicked.connect(self._recompute_auto)
-        self._poly_sel.processed.connect(self._set_proposals)
+        self._recompute_btn.clicked.connect(lambda: self.recompute(self._img, self._poly))
+        self._img_proc.processed.connect(self._on_img_proc)
+        self._poly_sel.processed.connect(lambda polys: super().set_proposals(polys))
 
     ''' Overrides '''
+
+    def recompute(self, img: np.ndarray, poly: PlanarPolygon):
+        self.process_img(img, poly)
+        
+    def process_img(self, img: np.ndarray, poly: PlanarPolygon):
+        self._img_proc.setImage(img)
 
     @abc.abstractmethod
     def auto_name(self) -> str:
@@ -205,14 +210,24 @@ class AutoSegmentorWidget(SegmentorWidget):
         pass
 
     @abc.abstractmethod
-    def recompute_auto(self) -> List[PlanarPolygon]:
-        ''' Re-compute auto-segmentation, setting state as necessary '''
+    def recompute_auto(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+        ''' Recompute auto-segmentation, setting state as necessary '''
         pass
-    
-    ''' Privates '''
 
-    def _recompute_auto(self):
-        self._poly_sel.setData(self._img, self.recompute_auto()) # _set_proposals() called through bubbled event
+    def set_proposals(self, polys: List[PlanarPolygon]):
+        self._poly_sel.setData(self._img, polys) # super.set_proposals() called through bubbled event
+
+    ''' Private ''' 
+    def _on_img_proc(self):
+        img = self._img_proc.processed_img
+        assert not self._poly is None and not img is None
+        scale = self._img_proc.scale
+        assert scale > 0
+        poly = self._poly.set_res(scale, scale) # Scale to
+        polys = self.recompute_auto(img, poly)
+        polys = [p.set_res(1/scale, 1/scale) for p in polys] # Scale from
+        self.set_proposals(polys)
+    
 
 def mask_to_polygons(mask: np.ndarray) -> List[PlanarPolygon]:
     polys = []

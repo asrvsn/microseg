@@ -59,25 +59,30 @@ class CellposeMultiSegmentorWidget(AutoSegmentorWidget):
     def auto_name(self) -> str:
         return 'Cellpose'
 
-    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        ''' 
-        Recomputes only the mask/poly post-processing step if no existing cellpose mask exists.
-        Cellpose mask is re-computed only on explicit user request.
-        '''
-        self._update_img(img, poly)
-        self._update_cp_polys()
-        return self._cp_polys
-
     def reset_state(self):
         super().reset_state()
-        self._cp_polys = None
         if hasattr(self, '_cp_cellprob_sld'):
             self._cp_cellprob_sld.setValue(0.)
 
-    def recompute_auto(self) -> List[PlanarPolygon]:
-        ''' Recompute cellpose '''
-        self._update_cp_polys()
-        return self._cp_polys
+    def recompute_auto(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+        '''
+        Compute cellpose polygons using with possible downscaling
+        Returns polygons in the original (un-downscaled) coordinate system
+        '''
+        # diam = poly.circular_radius() * 2
+        diam = poly.diameter()
+        cellprob = self._cp_cellprob_sld.value()
+        mask = self._cp_model.eval(
+            img,
+            diameter=diam,
+            cellprob_threshold=cellprob,
+        )[0]
+        print(f'Cellpose mask computed with diameter {diam}, cellprob {cellprob}')
+        assert mask.shape == img.shape[:2]
+        cp_polys = mask_to_polygons(mask)
+        print(f'Cellpose found {len(cp_polys)} valid polygons')
+        return cp_polys
+
 
     def keyPressEvent(self, evt):
         if evt.key() == QtCore.Qt.Key_Return and evt.modifiers() & Qt.ShiftModifier:
@@ -95,37 +100,6 @@ class CellposeMultiSegmentorWidget(AutoSegmentorWidget):
             model_type=self.MODELS[idx],
             gpu=self.USE_GPU
         )
-
-    def _compute_cp_polys(self, img: np.ndarray, scale: float, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        '''
-        Compute cellpose polygons using with possible downscaling
-        Returns polygons in the original (un-downscaled) coordinate system
-        '''
-        assert scale > 0
-        poly = poly.set_res(scale, scale)
-        # diam = poly.circular_radius() * 2
-        diam = poly.diameter()
-        cellprob = self._cp_cellprob_sld.value()
-        mask = self._cp_model.eval(
-            img,
-            diameter=diam,
-            cellprob_threshold=cellprob,
-        )[0]
-        print(f'Cellpose mask computed with diameter {diam}, cellprob {cellprob}')
-        assert mask.shape == img.shape[:2]
-        cp_polys = [p.set_res(1/scale, 1/scale) for p in mask_to_polygons(mask)]
-        print(f'Cellpose found {len(cp_polys)} valid polygons')
-        return cp_polys
-
-    def _update_img(self, img: np.ndarray, poly: PlanarPolygon):
-        self._img_proc.setImage(img)
-
-    def _update_cp_polys(self):
-        '''
-        Computes & sets cellpose mask
-        '''
-        assert not self._poly is None and not self._img_proc.processed_img is None
-        self._cp_polys = self._compute_cp_polys(self._img_proc.processed_img, self._img_proc.scale, self._poly)
 
 
 class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
@@ -153,7 +127,7 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
     def name(self) -> str:
         return 'Cellpose (single)'
     
-    def _update_img(self, img: np.ndarray, poly: PlanarPolygon):
+    def process_img(self, img: np.ndarray, poly: PlanarPolygon):
         center = poly.centroid() 
         radius = np.linalg.norm(poly.vertices - center, axis=1).max() * self.WIN_MULT
         # Select image by center +- radius 
@@ -165,7 +139,7 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
         self._offset = np.array([xmin, ymin])
         self._center = np.array([xmax - xmin, ymax - ymin]) / 2
         subimg = img[ymin:ymax, xmin:xmax].copy()
-        super()._update_img(subimg, poly)
+        super().process_img(subimg, poly)
         self._render_img(poly)
     
     def _render_img(self, poly: PlanarPolygon):
@@ -179,6 +153,7 @@ class CellposeSingleSegmentorWidget(CellposeMultiSegmentorWidget):
             subimg = mutil.draw_outline(subimg, (poly - offset).set_res(scale, scale))
         self._subimg_view.setImage(subimg)  
     
+    # TODO: need to move this logic up to auto.py
     def _compute_cp_polys(self, subimg: np.ndarray, scale: float, poly: PlanarPolygon) -> List[PlanarPolygon]:
         # Compute cellpose on sub-img & translate back
         polys = super()._compute_cp_polys(subimg, scale, poly - self._offset)
