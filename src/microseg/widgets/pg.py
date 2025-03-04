@@ -320,6 +320,10 @@ class HistogramFilterWidget(pg.PlotWidget):
 
     def __init__(self, *args, title='Histogram', **kwargs):
         super().__init__(*args, **kwargs)
+        # Set fixed height and margins
+        self.setFixedHeight(150)  # Increase widget height
+        self.setContentsMargins(10, 10, 10, 10)  # Add margins for better handle interaction
+        
         # Widgets
         ## Plot
         pitem = self.getPlotItem()
