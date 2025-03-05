@@ -29,6 +29,9 @@ class LabeledROI:
     def copy(self) -> 'LabeledROI':
         return LabeledROI(self.lbl, self.roi.copy())
 
+    def relabel(self, lbl: int):
+        return LabeledROI(lbl, self.roi.copy())
+
     def flipy(self, yval: float) -> 'LabeledROI':
         return LabeledROI(self.lbl, self.roi.flipy(yval))
 
