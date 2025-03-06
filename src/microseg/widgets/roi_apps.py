@@ -288,20 +288,22 @@ class ZStackObjectViewer(SaveableWidget):
             vol = vol.astype(np.float32)
             vol = (vol - vol.min()) / (vol.max() - vol.min())  # Normalize to [0,1]
             
-            # Create RGBA data with improved transparency mapping
-            # Apply gamma correction to enhance contrast
-            gamma = 0.7
-            vol_gamma = np.power(vol, gamma)
+            # Apply gamma correction (gamma < 1 brightens, gamma > 1 darkens)
+            gamma = 0.5  # Brightening effect to see more detail
+            vol_corrected = np.power(vol, gamma)
             
-            # Create more sophisticated alpha mapping
-            # Very low values become transparent, mid-high values more visible
+            # Optional: logarithmic correction instead of gamma
+            # vol_corrected = np.log1p(vol * 10) / np.log1p(10)  # Uncomment to use log correction
+            
+            # Create alpha mapping that preserves more detail
             alpha = np.zeros_like(vol)
-            alpha[vol > 0.1] = 0.3  # Base visibility for all significant signals
-            alpha[vol > 0.3] = 0.6  # Stronger signals more visible
-            alpha[vol > 0.5] = 0.8  # Brightest signals most visible
+            alpha[vol_corrected > 0.05] = 0.2  # Make more values visible
+            alpha[vol_corrected > 0.2] = 0.4
+            alpha[vol_corrected > 0.4] = 0.6
+            alpha[vol_corrected > 0.6] = 0.8
             
             # Create final RGBA volume
-            vol_rgba = np.stack([vol_gamma] * 3 + [alpha], axis=-1)
+            vol_rgba = np.stack([vol_corrected] * 3 + [alpha], axis=-1)
             vol_rgba = (vol_rgba * 255).astype(np.ubyte)
             
             # Create GLVolumeItem with adjusted rendering parameters
