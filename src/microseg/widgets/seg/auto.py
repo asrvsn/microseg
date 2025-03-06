@@ -213,7 +213,7 @@ class PolySelectionWidget(VLayoutWidget):
             fn = self.FILTERS[name]
             hist_data = np.array([fn(poly, img) for poly in self._polys])
             print(f'{name} has {len(hist_data)} values')
-            filt.setData(hist_data)
+            filt.setData(hist_data, percentile=True)
         self._recompute()
 
     ''' Private '''
@@ -222,7 +222,7 @@ class PolySelectionWidget(VLayoutWidget):
         if self._polys.size > 0:
             if self._closest_only:
                 center = self._poly.centroid()
-                polys = [min(polys, key=lambda p: np.linalg.norm(p.centroid() - center))]
+                polys = [min(self._polys, key=lambda p: np.linalg.norm(p.centroid() - center))]
             else:
                 N = len(self._polys)
                 polys = self._polys[np.logical_and.reduce([

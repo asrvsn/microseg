@@ -341,7 +341,7 @@ class HistogramFilterWidget(pg.PlotWidget):
         self._hist_data = None
         self._mask = None
 
-    def setData(self, data: np.ndarray, n_per_bin: int=10):
+    def setData(self, data: np.ndarray, n_per_bin: int=10, percentile: bool=False):
         # Temporarily disconnect the region change signal if it exists
         try:
             self._region.sigRegionChanged.disconnect(self._on_region_changed)
@@ -350,13 +350,19 @@ class HistogramFilterWidget(pg.PlotWidget):
         
         assert n_per_bin > 0
         if len(data) > 0:
+            if percentile:
+                # Use percentile range
+                data = data - data.min()
+                data = data / data.max() 
+                data *= 100
             self._hist_data = data
             n_bins = max(1, len(data) // n_per_bin)
             hist, bin_edges = np.histogram(data, bins=n_bins)
-            bin_edges -= bin_edges[0]
-            bin_edges /= bin_edges[-1] / 100 # Set to percentile
             self._hist.setData(bin_edges, hist)
-            self._region.setRegion([0, 100]) 
+            if percentile:
+                self._region.setRegion([0, 100]) 
+            else:
+                self._region.setRegion([data.min(), data.max()]) 
         else:
             self._hist.setData([], [])
             self._region.setRegion([0, 0])  # Reset region

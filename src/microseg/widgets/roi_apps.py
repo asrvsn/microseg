@@ -127,7 +127,7 @@ class ImageSegmentorApp(SaveableApp):
         ]
         self.refreshROIs(push=True)
 
-class ZStackObjectViewer(gl.GLViewWidget):
+class ZStackObjectViewer(SaveableWidget):
     '''
     3D viewer of multiple objects with current z-plane rendered
     '''
@@ -145,6 +145,9 @@ class ZStackObjectViewer(gl.GLViewWidget):
         'color': (1.0, 1.0, 1.0, 1.0),
         'size': 10,
     }
+    volume_opts: dict = {
+        'glOptions': 'translucent',
+    }
     facecolors = cc_glasbey_01_rgba
 
     def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, *args, **kwargs): 
@@ -154,46 +157,68 @@ class ZStackObjectViewer(gl.GLViewWidget):
         self._voxsize = voxsize # XYZ
         self._z_aniso = voxsize[2] / voxsize[0] # Rendered in space where XY are unit-size pixels, scale z accordingly
         self.setWindowTitle('Z-Slice Object Viewer')
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         MainWindow.resizeToScreen(self, offset=1) # Show on next avail screen
+        
+        # Create GL widget
+        self._gl_widget = gl.GLViewWidget()
+        self._gl_widget.keyPressEvent = lambda evt: self.keyPressEvent(evt)
         viewsize = imgsize.copy() # Shape of viewport
         viewsize[2] *= self._z_aniso
-        self.opts['center'] = pg.Vector(*(viewsize/2))
-        self.setCameraPosition(distance=viewsize.max() * 1.1) # Zoom out sufficiently
+        self._gl_widget.opts['center'] = pg.Vector(*(viewsize/2))
+        self._gl_widget.setCameraPosition(distance=viewsize.max() * 1.3)
+        self._gl_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._main_layout.addWidget(self._gl_widget)
+        
+        # Add cursor point to GL widget
         self._cursor_pt = gl.GLScatterPlotItem(**self.cursor_opts)
-        self.addItem(self._cursor_pt)
-
-        # State
+        self._gl_widget.addItem(self._cursor_pt)
+        
+        # Create view mode controls
+        self._settings_layout.addWidget(QLabel("View mode:"))
+        self._view_selector = QComboBox()
+        self._view_selector.addItems(['slice', 'volume'])
+        self._view_selector.currentTextChanged.connect(self._set_view_mode)
+        self._settings_layout.addWidget(self._view_selector)
+        
+        # Initialize state
         self._z = 0
+        self._chan = 0
         self._plane = None
+        self._volume = None
+        self._stack = None
         self._meshes = []
         self._rois = []
         self._is_proposing = False
         self._zpair_propose = (0, 0)
         self._proposed_map = dict()
         self._proposed_rois = []
+        self._view_mode = 'slice'
+        self.setDisabled(False)
+
+    def setStack(self, img: np.ndarray):
+        assert img.ndim == 4, f'Expected ZXYC stack, got {img.ndim}D'
+        self._stack = img
+        self._plane = None
+        self._volume = None
+        if self._view_mode == 'slice':
+            self._render_plane()
+        else:
+            self._render_volume()
 
     def setROIs(self, rois: List[List[ROI]]):
         assert not self._is_proposing
         self._rois = rois
         self._render_rois(rois)
 
-    def setZ(self, z: int, img: np.ndarray):
-        self._z = z
-        if not self._plane is None:
-            self.removeItem(self._plane)
-        img = img.astype(np.float32)  # Convert to float for proper scaling
-        img -= img.min()  # Shift min to 0
-        img /= img.max()  # Normalize to [0, 1]
-        img_8bit = (img * 255).astype(np.uint8)  # Scale to [0, 255]
-        img_rgba = np.stack([img_8bit] * 3 + [np.full_like(img_8bit, 255)], axis=-1)  # Add RGBA channels
-        self._plane = gl.GLImageItem(img_rgba)
-        self._plane.translate(0, 0, z * self._z_aniso)
-        self.addItem(self._plane)
+    def setZ(self, z: int):
+        if z != self._z:
+            self._z = z
+            if self._view_mode == 'slice':
+                self._render_plane()
 
     def setXY(self, xy: Tuple[int, int]):
         self._cursor_xy = xy
-        self._cursor_pt.setData(pos=[xy])
+        self._cursor_pt.setData(pos=[(xy[0], xy[1], self._z * self._z_aniso)])
 
     def closeEvent(self, evt):
         for widget in QApplication.instance().topLevelWidgets(): # Intercept the close evt and close the main application.
@@ -212,15 +237,84 @@ class ZStackObjectViewer(gl.GLViewWidget):
                         self._start_proposing(self._z, z_)
             else:
                 self.nav_key_pressed.emit(evt)
+        elif evt.key() == Qt.Key_V:
+            self._set_view_mode('slice' if self._view_mode == 'volume' else 'volume')
         else:
             super().keyPressEvent(evt)
 
+    def getData(self):
+        pass
+
     ''' Privates '''
+
+    def _set_view_mode(self, mode: str):
+        if mode != self._view_mode:
+            self._view_mode = mode
+            if mode == 'slice':
+                if self._volume is not None:
+                    self._gl_widget.removeItem(self._volume)
+                if self._plane is not None and self._plane not in self._gl_widget.items:
+                    self._gl_widget.addItem(self._plane)
+                self._render_plane()
+            else:
+                if self._plane is not None:
+                    self._gl_widget.removeItem(self._plane)
+                if self._volume is not None and self._volume not in self._gl_widget.items:
+                    self._gl_widget.addItem(self._volume)
+                self._render_volume()
+
+    def _render_plane(self):
+        assert not self._stack is None
+        img = self._stack[self._z, :, :, self._chan].T
+        img = img.astype(np.float32)  # Convert to float for proper scaling
+        img -= img.min()  # Shift min to 0
+        img /= img.max()  # Normalize to [0, 1]
+        img_8bit = (img * 255).astype(np.uint8)  # Scale to [0, 255]
+        img_rgba = np.stack([img_8bit] * 3 + [np.full_like(img_8bit, 255)], axis=-1)  # Add RGBA channels
+        
+        if self._plane is None:
+            self._plane = gl.GLImageItem(img_rgba)
+            self._gl_widget.addItem(self._plane)
+        else:
+            self._plane.setData(img_rgba)
+            self._plane.resetTransform()  # Clear any previous transforms
+        self._plane.translate(0, 0, self._z * self._z_aniso)
+
+    def _render_volume(self):
+        assert not self._stack is None
+        if self._volume is None:
+            # Prepare volume data (x,y,z,RGBA)
+            vol = self._stack[:, :, :, self._chan].transpose(2, 1, 0)  
+            vol = vol.astype(np.float32)
+            vol = (vol - vol.min()) / (vol.max() - vol.min())  # Normalize to [0,1]
+            
+            # Create RGBA data with improved transparency mapping
+            # Apply gamma correction to enhance contrast
+            gamma = 0.7
+            vol_gamma = np.power(vol, gamma)
+            
+            # Create more sophisticated alpha mapping
+            # Very low values become transparent, mid-high values more visible
+            alpha = np.zeros_like(vol)
+            alpha[vol > 0.1] = 0.3  # Base visibility for all significant signals
+            alpha[vol > 0.3] = 0.6  # Stronger signals more visible
+            alpha[vol > 0.5] = 0.8  # Brightest signals most visible
+            
+            # Create final RGBA volume
+            vol_rgba = np.stack([vol_gamma] * 3 + [alpha], axis=-1)
+            vol_rgba = (vol_rgba * 255).astype(np.ubyte)
+            
+            # Create GLVolumeItem with adjusted rendering parameters
+            self._volume = gl.GLVolumeItem(vol_rgba, sliceDensity=2, smooth=True)
+            self._volume.scale(1, 1, self._z_aniso)
+            self._volume.setGLOptions('additive')
+            self._gl_widget.addItem(self._volume)
 
     def _render_rois(self, rois: List[List[LabeledROI]]):
         # Remove existing meshes
         for mesh in self._meshes:
-            self.removeItem(mesh)
+            self._gl_widget.removeItem(mesh)
+            mesh.deleteLater()  # Explicitly delete the mesh
         self._meshes = []
         # Compute 3d objects from 2d ROIs associated by their labels
         objs = dict()
@@ -249,7 +343,7 @@ class ZStackObjectViewer(gl.GLViewWidget):
             colors = np.full((len(tri.simplices), 4), self.facecolors[lbl % nfc])
             md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, faceColors=colors)
             mesh = gl.GLMeshItem(meshdata=md, **self.mesh_opts)
-            self.addItem(mesh)
+            self._gl_widget.addItem(mesh)
             self._meshes.append(mesh)
 
     def _start_proposing(self, z1: int, z2: int):
@@ -306,7 +400,7 @@ class ZStackObjectViewer(gl.GLViewWidget):
             if dist <= threshold:
                 l1, l2 = rois1[poly1_idx].lbl, rois2[poly2_idx].lbl
                 if l1 != l2:  # Only map if labels are different
-                    label_map[min(l1, l2)] = max(l1, l2)
+                    label_map[max(l1, l2)] = min(l1, l2)  
         
         return label_map
 
@@ -329,10 +423,11 @@ class ZStackSegmentorApp(ImageSegmentorApp):
         imgsize = np.array([self._img.shape[1], self._img.shape[2], self._img.shape[0]])
         voxsize = get_voxel_size(self._img_path, fmt='XYZ') # Physical voxel sizes
         self._viewer = ZStackObjectViewer(imgsize, voxsize)
+        self._viewer.setStack(self._img)
         self._viewer.show()
 
         # Listeners
-        self._creator.image_changed.connect(lambda img: self._viewer.setZ(self._z, img.T))
+        self._creator.image_changed.connect(lambda img: self._viewer.setZ(self._z))
         self._viewer.nav_key_pressed.connect(self.keyPressEvent)
         self._viewer.start_proposing.connect(lambda: self.setEnabled(False))
         self._viewer.finish_proposing.connect(self._finish_proposing)
@@ -342,9 +437,9 @@ class ZStackSegmentorApp(ImageSegmentorApp):
             self._viewer.close() 
         evt.accept()
 
-    def refreshROIs(self):
+    def refreshROIs(self, push: bool=True):
         self._viewer.setROIs(self._rois)
-        super().refreshROIs()
+        super().refreshROIs(push=push)
 
     ''' Privates ''' 
 

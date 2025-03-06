@@ -133,7 +133,7 @@ class ROICreatorWidget(VLayoutWidget):
             else:
                 raise Exception('Invalid ROI type')
             self._rois.append(roi)
-        print('ROIs created')
+        # print('ROIs created')
         self.processed.emit(self._rois)
 
     def _on_touchpad_move(self, dx: np.ndarray):
@@ -164,7 +164,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
 
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.Tool | Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint)
         self.setWindowModality(Qt.NonModal)
-        self.setWindowTitle(self.name())
+        self.setWindowTitle(f'{self.name()} segmentor')
 
         # State
         self.reset_state()
