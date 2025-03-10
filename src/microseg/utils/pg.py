@@ -6,8 +6,11 @@ Mirrors the functionality of mpl_tools.py
 import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from qtpy import QtGui, QtWidgets
+from qtpy.QtWidgets import QApplication
+from qtpy.QtCore import Qt
 import numpy as np
 import pdb
+import sys
 
 from typing import List, Tuple, Callable
 
@@ -17,7 +20,7 @@ from matgeo.triangulation import FaceTriangulation, VoronoiTriangulation, Triang
 
 from .colors import *
 from asrvsn_math.vectors import vec_angle
-from microseg.widgets.pg_gl import GLMakeSynced, GrabbableGLViewWidget
+from microseg.widgets.pg_gl import GLMakeSynced, GrabbableGLViewWidget, GrabbableGLViewWindow
 # from pg_widgets import *
 # from pg_seg_widgets import *
 
@@ -109,6 +112,29 @@ def show(synced=False, fullscreen=False):
             win.showFullScreen()
         QtWidgets.QApplication.instance().exec()
 
+def run_gl(fun: Callable):
+    """
+    Run a PyQtGraph window, handling Qt application lifecycle.
+    For Jupyter notebooks: Creates/reuses QApplication and shows window.
+    For scripts: Runs event loop until window is closed.
+    """
+
+    # Create/get QApplication instance
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication(sys.argv)
+        
+    # Close any existing windows
+    for w in QApplication.topLevelWindows():
+        w.close()
+
+    # Setup new window
+    win = GrabbableGLViewWindow()
+    fun(win._vw)
+    # win.setAttribute(Qt.WA_DeleteOnClose)
+    win.show()
+    return app.exec_()
+
 ''' 2D plotting API '''
 
 def plot_2d(index: Tuple[int, int], func, *args):
@@ -178,7 +204,7 @@ def tri_mesh_3d(vw: gl.GLViewWidget, pts: np.ndarray, simplices: np.ndarray, col
 def triangulation_3d(vw: gl.GLViewWidget, tri: Triangulation, **kwargs):
     tri_mesh_3d(vw, tri.pts, tri.simplices, **kwargs)
 
-def ellipsoid_3d(vw: gl.GLViewWidget, ell: Ellipsoid, grid=True, **kwargs):
+def ellipsoid_3d(vw: gl.GLViewWidget, ell: Ellipsoid, grid=False, **kwargs):
     kwargs = gl_mesh_default_opts | kwargs
     md = gl.MeshData.sphere(rows=20, cols=40)
     pts = md.vertexes()
@@ -242,7 +268,7 @@ def polygons_3d(vw: gl.GLViewWidget, polygons: List[np.ndarray], centers: np.nda
 def ppolygons_3d(vw: gl.GLViewWidget, polygons: List[PlanarPolygon], centers: np.ndarray, *args, **kwargs):
     assert all([p.ndim == 3 for p in polygons]), 'All polygons must be 3D'
     polygons = [
-        p.vertices_emb for p in polygons
+        p.vertices_nd for p in polygons
     ]
     polygons_3d(vw, polygons, centers, *args, **kwargs)
 

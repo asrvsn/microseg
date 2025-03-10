@@ -140,6 +140,12 @@ class ZStackObjectViewer(SaveableWidget):
         'drawEdges': False,
         'smooth': False,
     }
+    hull_opts: dict ={
+        'shader': 'balloon',
+        'glOptions': 'opaque',
+        'drawEdges': True,
+        'smooth': False,
+    }
     cursor_opts: dict = {
         'pxMode': True,
         'color': (1.0, 1.0, 1.0, 1.0),
@@ -155,6 +161,7 @@ class ZStackObjectViewer(SaveableWidget):
         self._imgsize = imgsize # XYZ
         self._zmax = imgsize[2]
         self._voxsize = voxsize # XYZ
+        assert np.isclose(voxsize[0], voxsize[1]), 'XY voxel size must be approximately equal'
         self._z_aniso = voxsize[2] / voxsize[0] # Rendered in space where XY are unit-size pixels, scale z accordingly
         self.setWindowTitle('Z-Slice Object Viewer')
         MainWindow.resizeToScreen(self, offset=1) # Show on next avail screen
@@ -174,17 +181,30 @@ class ZStackObjectViewer(SaveableWidget):
         self._gl_widget.addItem(self._cursor_pt)
         
         # Create view mode controls
-        self._settings_layout.addWidget(QLabel("View mode:"))
-        self._view_selector = QComboBox()
-        self._view_selector.addItems(['slice', 'volume'])
-        self._view_selector.currentTextChanged.connect(self._set_view_mode)
-        self._settings_layout.addWidget(self._view_selector)
+        self._settings_layout.addWidget(QLabel("Render:"))
+        self._slice_box = QCheckBox('Slice')
+        self._slice_box.setChecked(True)
+        self._slice_box.stateChanged.connect(self._render_views)
+        self._settings_layout.addWidget(self._slice_box)
+        self._vol_box = QCheckBox('Volume')
+        self._vol_box.stateChanged.connect(self._render_views)
+        self._settings_layout.addWidget(self._vol_box)
+        self._surf_box = QCheckBox('Surface')
+        self._surf_box.setChecked(True)
+        self._surf_box.stateChanged.connect(self._render_views)
+        self._settings_layout.addWidget(self._surf_box)
+        self._hull_box = QCheckBox('Hull')
+        self._hull_box.stateChanged.connect(self._render_views)
+        self._settings_layout.addWidget(self._hull_box)
         
         # Initialize state
         self._z = 0
         self._chan = 0
         self._plane = None
         self._volume = None
+        self._tri = None
+        self._surface = None
+        self._hull = None
         self._stack = None
         self._meshes = []
         self._rois = []
@@ -200,10 +220,13 @@ class ZStackObjectViewer(SaveableWidget):
         self._stack = img
         self._plane = None
         self._volume = None
-        if self._view_mode == 'slice':
-            self._render_plane()
-        else:
-            self._render_volume()
+        self._tri = Triangulation.from_volume(
+            self._stack[:, :, :, self._chan].transpose(2, 1, 0), # ZXY -> XYZ
+            spacing=(1, 1, self._z_aniso)
+        )
+        self._surface = None
+        self._hull = None
+        self._render_views()
 
     def setROIs(self, rois: List[List[ROI]]):
         assert not self._is_proposing
@@ -247,21 +270,17 @@ class ZStackObjectViewer(SaveableWidget):
 
     ''' Privates '''
 
-    def _set_view_mode(self, mode: str):
-        if mode != self._view_mode:
-            self._view_mode = mode
-            if mode == 'slice':
-                if self._volume is not None:
-                    self._gl_widget.removeItem(self._volume)
-                if self._plane is not None and self._plane not in self._gl_widget.items:
-                    self._gl_widget.addItem(self._plane)
-                self._render_plane()
-            else:
-                if self._plane is not None:
-                    self._gl_widget.removeItem(self._plane)
-                if self._volume is not None and self._volume not in self._gl_widget.items:
-                    self._gl_widget.addItem(self._volume)
-                self._render_volume()
+    def _render_views(self):
+        for [box, item, render_fn] in [
+            [self._slice_box, self._plane, self._render_plane],
+            [self._vol_box, self._volume, self._render_volume],
+            [self._surf_box, self._surface, self._render_surface],
+            [self._hull_box, self._hull, self._render_hull],
+        ]:
+            if box.isChecked():
+                render_fn()
+            elif not item is None and item in self._gl_widget.items:
+                self._gl_widget.removeItem(item)
 
     def _render_plane(self):
         assert not self._stack is None
@@ -270,7 +289,9 @@ class ZStackObjectViewer(SaveableWidget):
         img -= img.min()  # Shift min to 0
         img /= img.max()  # Normalize to [0, 1]
         img_8bit = (img * 255).astype(np.uint8)  # Scale to [0, 255]
-        img_rgba = np.stack([img_8bit] * 3 + [np.full_like(img_8bit, 255)], axis=-1)  # Add RGBA channels
+        alpha = np.zeros_like(img_8bit)
+        alpha[img > 0.02] = 255
+        img_rgba = np.stack([img_8bit] * 3 + [alpha], axis=-1)  # Add RGBA channels
         
         if self._plane is None:
             self._plane = gl.GLImageItem(img_rgba)
@@ -283,34 +304,20 @@ class ZStackObjectViewer(SaveableWidget):
     def _render_volume(self):
         assert not self._stack is None
         if self._volume is None:
-            # Prepare volume data (x,y,z,RGBA)
-            vol = self._stack[:, :, :, self._chan].transpose(2, 1, 0)  
-            vol = vol.astype(np.float32)
-            vol = (vol - vol.min()) / (vol.max() - vol.min())  # Normalize to [0,1]
-            
-            # Apply gamma correction (gamma < 1 brightens, gamma > 1 darkens)
-            gamma = 0.5  # Brightening effect to see more detail
-            vol_corrected = np.power(vol, gamma)
-            
-            # Optional: logarithmic correction instead of gamma
-            # vol_corrected = np.log1p(vol * 10) / np.log1p(10)  # Uncomment to use log correction
-            
-            # Create alpha mapping that preserves more detail
-            alpha = np.zeros_like(vol)
-            alpha[vol_corrected > 0.05] = 0.2  # Make more values visible
-            alpha[vol_corrected > 0.2] = 0.4
-            alpha[vol_corrected > 0.4] = 0.6
-            alpha[vol_corrected > 0.6] = 0.8
-            
-            # Create final RGBA volume
-            vol_rgba = np.stack([vol_corrected] * 3 + [alpha], axis=-1)
-            vol_rgba = (vol_rgba * 255).astype(np.ubyte)
-            
-            # Create GLVolumeItem with adjusted rendering parameters
-            self._volume = gl.GLVolumeItem(vol_rgba, sliceDensity=2, smooth=True)
-            self._volume.scale(1, 1, self._z_aniso)
-            self._volume.setGLOptions('additive')
+            self._volume = GLZStackItem(self._stack[:, :, :, self._chan], xyz_scale=(1, 1, self._z_aniso))
             self._gl_widget.addItem(self._volume)
+        else:
+            self._volume.setData(self._stack[:, :, :, self._chan])
+
+    def _render_surface(self):
+        if self._surface is None:
+            self._surface = GLTriangulationItem(self._tri)
+        self._gl_widget.addItem(self._surface)
+
+    def _render_hull(self):
+        if self._hull is None:
+            self._hull = GLTriangulationItem(self._tri.hullify(), **self.hull_opts)
+        self._gl_widget.addItem(self._hull)
 
     def _render_rois(self, rois: List[List[LabeledROI]]):
         # Remove existing meshes

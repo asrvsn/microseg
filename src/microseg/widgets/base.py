@@ -7,6 +7,7 @@ import os
 import pickle
 import math
 import numpy as np
+import pyqtgraph.opengl as gl # Has to be imported before qtpy
 from qtpy import QtCore
 from qtpy import QtGui, QtWidgets
 from qtpy.QtCore import Qt, QTimer, QObject

@@ -1,7 +1,7 @@
 '''
 Pyqtgraph OpenGL widgets
 '''
-from typing import List
+from typing import List, Tuple
 import numpy as np
 from qtpy import QtCore
 from qtpy.QtCore import Qt
@@ -10,6 +10,7 @@ from qtpy.QtGui import QKeySequence
 import pyqtgraph.opengl as gl
 
 from matgeo import Triangulation
+from .base import MainWindow
 
 class GrabbableGLViewWidget(gl.GLViewWidget):
     '''
@@ -26,6 +27,13 @@ class GrabbableGLViewWidget(gl.GLViewWidget):
             self._grab()
         else:
             super().keyPressEvent(ev)
+
+class GrabbableGLViewWindow(MainWindow):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._vw = GrabbableGLViewWidget()
+        self._vw.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setCentralWidget(self._vw)
 
 class GLPlaneItem(gl.GLMeshItem):
     """ 
@@ -68,6 +76,50 @@ class GLPlaneItem(gl.GLMeshItem):
         self.z_pos = z_new
         self.resetTransform()  
         self.translate(0, 0, z_new)  
+
+class GLZStackItem(gl.GLVolumeItem):
+    def __init__(self, z_stack: np.ndarray, *args, xyz_scale: Tuple[float, float, float]=(1, 1, 1), glOptions='additive', **kwargs):
+        '''
+        Z-stack is ZXY format
+        '''
+        self._z_stack = z_stack
+        self._xyz_scale = xyz_scale
+        super().__init__(*args, z_stack, glOptions=glOptions, **kwargs)
+
+    def setData(self, z_stack: np.ndarray):
+        '''
+        Z-stack is ZXY format
+        '''
+        self._z_stack = z_stack
+        data = self._process_stack()
+        super().setData(data)
+        self.resetTransform()
+        if self._xyz_scale != (1, 1, 1):
+            self.scale(*self._xyz_scale)
+
+    def _process_stack(self) -> np.ndarray:
+        # Prepare volume data (x,y,z,RGBA)
+        vol = self._z_stack.transpose(2, 1, 0)  
+        vol = vol.astype(np.float32)
+        vol = (vol - vol.min()) / (vol.max() - vol.min())  # Normalize to [0,1]
+        
+        # Create alpha mapping based on intensity
+        alpha = np.zeros_like(vol)
+        alpha[vol > 0.05] = 0.2
+        alpha[vol > 0.2] = 0.4
+        alpha[vol > 0.4] = 0.6
+        alpha[vol > 0.6] = 0.8
+        
+        # Create final RGBA volume
+        vol_rgba = np.stack([vol] * 3 + [alpha], axis=-1)
+        vol_rgba = (vol_rgba * 255).astype(np.ubyte)
+        return vol_rgba
+    
+class GLTriangulationItem(gl.GLMeshItem):
+    def __init__(self, tri: Triangulation, *args, md_kwargs=dict(), **kwargs):
+        self._tri = tri
+        self._md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, **md_kwargs)
+        super().__init__(*args, meshdata=self._md, **kwargs)
 
 class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
     '''
