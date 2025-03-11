@@ -14,7 +14,7 @@ import sys
 
 from typing import List, Tuple, Callable
 
-from matgeo.ellipsoid import Ellipsoid
+from matgeo.ellipsoid import Ellipsoid, Ellipse
 from matgeo.plane import Plane, PlanarPolygon
 from matgeo.triangulation import FaceTriangulation, VoronoiTriangulation, Triangulation
 
@@ -229,6 +229,11 @@ def plane_3d(vw: gl.GLViewWidget, plane: Plane, **kwargs):
     gr.scale(10, 10, 1)
     vw.addItem(gr)
 
+def ellipse_3d(vw: gl.GLViewWidget, ell: Ellipse, z: float=0, width=4, **kwargs):
+    poly = ell.discretize(100).embed_3d(z)
+    # outlines_3d(vw, [poly], width=width, **kwargs)
+    ppolygons_3d(vw, [poly], np.array([[ell.v[0], ell.v[1], z]]), width=width, **kwargs)
+
 def face_triangulation_3d(vw: gl.GLViewWidget, tri: FaceTriangulation, colormap: np.ndarray=None, scheme='categorical', **kwargs):
     labels = tri.label_simplices()
     if not (colormap is None):
@@ -271,6 +276,17 @@ def ppolygons_3d(vw: gl.GLViewWidget, polygons: List[PlanarPolygon], centers: np
         p.vertices_nd for p in polygons
     ]
     polygons_3d(vw, polygons, centers, *args, **kwargs)
+
+def outlines_3d(vw: gl.GLViewWidget, polygons: List[PlanarPolygon], colormap: np.ndarray=None, scheme='categorical', width=2, **kwargs):
+    '''
+    Draw outlines using line plot
+    '''
+    assert all([p.ndim == 3 for p in polygons]), 'All polygons must be 3D'
+    labels = np.arange(len(polygons)) if colormap is None else colormap
+    colors = map_colors(labels, scheme, rgba=True)
+    for p, c in zip(polygons, colors):
+        line = gl.GLLinePlotItem(pos=p.vertices_nd, color=c, width=width, **kwargs)
+        vw.addItem(line)
 
 def image_3d(vw: gl.GLViewWidget, img: np.ndarray, origin=np.zeros(3), grid=True, **kwargs):
     '''

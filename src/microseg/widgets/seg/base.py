@@ -58,6 +58,9 @@ class ROICreatorWidget(VLayoutWidget):
         self._poly_wdg.addSpacing(5)
         self._chull_box = QCheckBox('Convex hull')
         self._poly_wdg.addWidget(self._chull_box)
+        self._poly_wdg.addSpacing(5)
+        self._bspl_box = QCheckBox('B-spline subdivision')
+        self._poly_wdg.addWidget(self._bspl_box)
         self.addWidget(self._poly_wdg)
         self._ellipse_btn = QRadioButton('Ellipse')
         self.addWidget(self._ellipse_btn)
@@ -79,10 +82,11 @@ class ROICreatorWidget(VLayoutWidget):
         self._polys = []
         self._poly_btn.setChecked(True)
         self._chull_box.setChecked(False)
+        self._bspl_box.setChecked(False)
         self._reset_state()
         
         # Listeners
-        for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box]:
+        for btn in [self._poly_btn, self._ellipse_btn, self._circle_btn, self._chull_box, self._bspl_box]:
             btn.toggled.connect(self._recompute)
         self._simplify_sld.valueChanged.connect(lambda _: self._recompute())
         self._touchpad.moved.connect(self._on_touchpad_move)
@@ -108,28 +112,26 @@ class ROICreatorWidget(VLayoutWidget):
 
     def _recompute(self):
         mk_poly = self._poly_btn.isChecked()
-        if mk_poly:
-            self._poly_wdg.setEnabled(True)
-        else:
-            self._poly_wdg.setEnabled(False)
+        self._poly_wdg.setEnabled(mk_poly)
         use_chull = self._chull_box.isChecked()
+        use_bspl = self._bspl_box.isChecked()
         mk_ell = self._ellipse_btn.isChecked()
         mk_circ = self._circle_btn.isChecked()
         scale = self._scale_sld.value()
         simplify = self._simplify_sld.value()
         self._rois = []
         for poly in self._polys:
-            poly = poly * scale + self._offset * self.MOVE_SCALE
+            roi = poly * scale + self._offset * self.MOVE_SCALE
             if mk_poly:
-                poly = poly.simplify(simplify)
+                roi = roi.simplify(simplify)
                 if use_chull: 
-                    roi = poly.hullify()
-                else:
-                    roi = poly
+                    roi = roi.hullify()
+                if use_bspl:
+                    roi = roi.subdivide_bspline()
             elif mk_ell:
-                roi = Ellipse.from_poly(poly)
+                roi = Ellipse.from_poly(roi)
             elif mk_circ:
-                roi = Circle.from_poly(poly)
+                roi = Circle.from_poly(roi)
             else:
                 raise Exception('Invalid ROI type')
             self._rois.append(roi)
@@ -241,7 +243,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         Delete from the current proposals
         '''
-        self._set_proposals([
+        self.set_proposals([
             p for i, p in enumerate(self._proposed_polys) if i not in indices
         ])
 

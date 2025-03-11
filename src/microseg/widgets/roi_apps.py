@@ -237,7 +237,7 @@ class ZStackObjectViewer(SaveableWidget):
         if z != self._z:
             self._z = z
             if self._view_mode == 'slice':
-                self._render_plane()
+                self._update_plane()
 
     def setXY(self, xy: Tuple[int, int]):
         self._cursor_xy = xy
@@ -271,18 +271,19 @@ class ZStackObjectViewer(SaveableWidget):
     ''' Privates '''
 
     def _render_views(self):
-        for [box, item, render_fn] in [
-            [self._slice_box, self._plane, self._render_plane],
-            [self._vol_box, self._volume, self._render_volume],
-            [self._surf_box, self._surface, self._render_surface],
-            [self._hull_box, self._hull, self._render_hull],
+        for [box, item, update_fn] in [
+            [self._slice_box, self._plane, self._update_plane],
+            [self._vol_box, self._volume, self._update_volume],
+            [self._surf_box, self._surface, self._update_surface],
+            [self._hull_box, self._hull, self._update_hull],
         ]:
             if box.isChecked():
-                render_fn()
+                update_fn()
+                self._gl_widget.addItem(item)
             elif not item is None and item in self._gl_widget.items:
                 self._gl_widget.removeItem(item)
 
-    def _render_plane(self):
+    def _update_plane(self):
         assert not self._stack is None
         img = self._stack[self._z, :, :, self._chan].T
         img = img.astype(np.float32)  # Convert to float for proper scaling
@@ -295,29 +296,27 @@ class ZStackObjectViewer(SaveableWidget):
         
         if self._plane is None:
             self._plane = gl.GLImageItem(img_rgba)
-            self._gl_widget.addItem(self._plane)
         else:
             self._plane.setData(img_rgba)
             self._plane.resetTransform()  # Clear any previous transforms
         self._plane.translate(0, 0, self._z * self._z_aniso)
 
-    def _render_volume(self):
+    def _update_volume(self):
         assert not self._stack is None
         if self._volume is None:
             self._volume = GLZStackItem(self._stack[:, :, :, self._chan], xyz_scale=(1, 1, self._z_aniso))
-            self._gl_widget.addItem(self._volume)
         else:
             self._volume.setData(self._stack[:, :, :, self._chan])
 
-    def _render_surface(self):
+    def _update_surface(self):
+        # TODO: need to update data here?
         if self._surface is None:
             self._surface = GLTriangulationItem(self._tri)
-        self._gl_widget.addItem(self._surface)
 
-    def _render_hull(self):
+    def _update_hull(self):
+        # TODO: need to update data here?
         if self._hull is None:
             self._hull = GLTriangulationItem(self._tri.hullify(), **self.hull_opts)
-        self._gl_widget.addItem(self._hull)
 
     def _render_rois(self, rois: List[List[LabeledROI]]):
         # Remove existing meshes
