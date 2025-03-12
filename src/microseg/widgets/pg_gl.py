@@ -116,10 +116,14 @@ class GLZStackItem(gl.GLVolumeItem):
         return vol_rgba
     
 class GLTriangulationItem(gl.GLMeshItem):
+    
     def __init__(self, tri: Triangulation, *args, md_kwargs=dict(), **kwargs):
-        self._tri = tri
-        self._md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, **md_kwargs)
-        super().__init__(*args, meshdata=self._md, **kwargs)
+        super().__init__(*args, **kwargs)
+        self.setData(tri, **md_kwargs)
+
+    def setData(self, tri: Triangulation, **md_kwargs):
+        md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, **md_kwargs)
+        self.setMeshData(meshdata=md)
 
 class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
     '''

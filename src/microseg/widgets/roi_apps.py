@@ -181,30 +181,34 @@ class ZStackObjectViewer(SaveableWidget):
         self._gl_widget.addItem(self._cursor_pt)
         
         # Create view mode controls
+        self._mc_level = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
+        self._mc_level.setSingleStep(0.1)
+
         self._settings_layout.addWidget(QLabel("Render:"))
-        self._slice_box = QCheckBox('Slice')
-        self._slice_box.setChecked(True)
-        self._slice_box.stateChanged.connect(self._render_views)
-        self._settings_layout.addWidget(self._slice_box)
-        self._vol_box = QCheckBox('Volume')
-        self._vol_box.stateChanged.connect(self._render_views)
-        self._settings_layout.addWidget(self._vol_box)
-        self._surf_box = QCheckBox('Surface')
-        self._surf_box.setChecked(True)
-        self._surf_box.stateChanged.connect(self._render_views)
-        self._settings_layout.addWidget(self._surf_box)
-        self._hull_box = QCheckBox('Hull')
-        self._hull_box.stateChanged.connect(self._render_views)
-        self._settings_layout.addWidget(self._hull_box)
-        
+        self._controls = [
+            ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
+            ['Volume', None, self._update_volume, []],
+            ['Surface', None, self._update_surface, [self._mc_level]],
+        ]
+        def _register_control(i: int, name: str, update_fn: Callable, opts: List[QWidget]):
+            self._settings_layout.addSpacing(5)
+            box = QCheckBox(name)
+            box.stateChanged.connect(lambda: self._toggle_control(i))
+            self._settings_layout.addWidget(box)
+            self._settings_layout.addSpacing(5)
+            for opt in opts:
+                opt.setEnabled(False)
+                self._settings_layout.addSpacing(5)
+                self._settings_layout.addWidget(opt)
+                opt.valueChanged.connect(lambda _: self._update_view(i))
+
+        for i, (name, _, update_fn, opts) in enumerate(self._controls):
+            _register_control(i, name, update_fn, opts)
+
         # Initialize state
+        self._active = [False] * len(self._controls)
         self._z = 0
         self._chan = 0
-        self._plane = None
-        self._volume = None
-        self._tri = None
-        self._surface = None
-        self._hull = None
         self._stack = None
         self._meshes = []
         self._rois = []
@@ -212,21 +216,14 @@ class ZStackObjectViewer(SaveableWidget):
         self._zpair_propose = (0, 0)
         self._proposed_map = dict()
         self._proposed_rois = []
-        self._view_mode = 'slice'
         self.setDisabled(False)
 
     def setStack(self, img: np.ndarray):
         assert img.ndim == 4, f'Expected ZXYC stack, got {img.ndim}D'
+        for i in range(len(self._controls)):
+            self._controls[i][1] = None # Reset state
         self._stack = img
-        self._plane = None
-        self._volume = None
-        self._tri = Triangulation.from_volume(
-            self._stack[:, :, :, self._chan].transpose(2, 1, 0), # ZXY -> XYZ
-            spacing=(1, 1, self._z_aniso)
-        )
-        self._surface = None
-        self._hull = None
-        self._render_views()
+        # Toggle some defaults: (1) slice and (2) surface
 
     def setROIs(self, rois: List[List[ROI]]):
         assert not self._is_proposing
@@ -236,8 +233,8 @@ class ZStackObjectViewer(SaveableWidget):
     def setZ(self, z: int):
         if z != self._z:
             self._z = z
-            if self._view_mode == 'slice':
-                self._update_plane()
+            if self._active[0]:
+                self._update_view(0)
 
     def setXY(self, xy: Tuple[int, int]):
         self._cursor_xy = xy
@@ -260,8 +257,6 @@ class ZStackObjectViewer(SaveableWidget):
                         self._start_proposing(self._z, z_)
             else:
                 self.nav_key_pressed.emit(evt)
-        elif evt.key() == Qt.Key_V:
-            self._set_view_mode('slice' if self._view_mode == 'volume' else 'volume')
         else:
             super().keyPressEvent(evt)
 
@@ -270,21 +265,26 @@ class ZStackObjectViewer(SaveableWidget):
 
     ''' Privates '''
 
-    def _render_views(self):
-        for [box, item, update_fn] in [
-            [self._slice_box, self._plane, self._update_plane],
-            [self._vol_box, self._volume, self._update_volume],
-            [self._surf_box, self._surface, self._update_surface],
-            [self._hull_box, self._hull, self._update_hull],
-        ]:
-            if box.isChecked():
-                update_fn()
-                self._gl_widget.addItem(item)
-            elif not item is None and item in self._gl_widget.items:
-                self._gl_widget.removeItem(item)
-
-    def _update_plane(self):
+    def _toggle_control(self, i: int):
         assert not self._stack is None
+        for opt in self._controls[i][3]:
+            opt.setEnabled(not self._active[i])
+        if self._active[i]:
+            item = self._controls[i][1]
+            if not item is None and item in self._gl_widget.items:
+                self._gl_widget.removeItem(item)
+        else:
+            self._update_view(i)
+            item = self._controls[i][1]
+            assert not item is None and not item in self._gl_widget.items
+            self._gl_widget.addItem(item)
+        self._active[i] = not self._active[i]
+
+    def _update_view(self, i):
+        self._controls[i][1] = self._controls[i][2](self._controls[i][1])
+
+    def _update_slice(self, item: Optional[gl.GLImageItem]) -> gl.GLImageItem:
+        print(f'updating slice to {self._z}')
         img = self._stack[self._z, :, :, self._chan].T
         img = img.astype(np.float32)  # Convert to float for proper scaling
         img -= img.min()  # Shift min to 0
@@ -293,30 +293,36 @@ class ZStackObjectViewer(SaveableWidget):
         alpha = np.zeros_like(img_8bit)
         alpha[img > 0.02] = 255
         img_rgba = np.stack([img_8bit] * 3 + [alpha], axis=-1)  # Add RGBA channels
-        
-        if self._plane is None:
-            self._plane = gl.GLImageItem(img_rgba)
+        if item is None:
+            item = gl.GLImageItem(img_rgba)
         else:
-            self._plane.setData(img_rgba)
-            self._plane.resetTransform()  # Clear any previous transforms
-        self._plane.translate(0, 0, self._z * self._z_aniso)
-
-    def _update_volume(self):
-        assert not self._stack is None
-        if self._volume is None:
-            self._volume = GLZStackItem(self._stack[:, :, :, self._chan], xyz_scale=(1, 1, self._z_aniso))
+            item.setData(img_rgba)
+            item.resetTransform()  # Clear any previous transforms
+        item.translate(0, 0, self._z * self._z_aniso)
+        return item
+    
+    def _update_volume(self, item: Optional[GLZStackItem]) -> GLZStackItem:
+        if item is None:
+            item = GLZStackItem(self._stack[:, :, :, self._chan], xyz_scale=(1, 1, self._z_aniso))
         else:
-            self._volume.setData(self._stack[:, :, :, self._chan])
+            item.setData(self._stack[:, :, :, self._chan])
+        return item
 
-    def _update_surface(self):
-        # TODO: need to update data here?
-        if self._surface is None:
-            self._surface = GLTriangulationItem(self._tri)
-
-    def _update_hull(self):
-        # TODO: need to update data here?
-        if self._hull is None:
-            self._hull = GLTriangulationItem(self._tri.hullify(), **self.hull_opts)
+    def _update_surface(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
+        print(f'update_surface called with item {item}')
+        vol = self._stack[:, :, :, self._chan].transpose(2, 1, 0) # ZXY -> XYZ
+        level = self._mc_level.value() * (vol.max() - vol.min()) + vol.min()
+        tri = Triangulation.from_volume(
+            vol,
+            method='marching_cubes',
+            spacing=(1, 1, self._z_aniso),
+            level=level,
+        )
+        if item is None:
+            item = GLTriangulationItem(tri)
+        else:
+            item.setData(tri)
+        return item
 
     def _render_rois(self, rois: List[List[LabeledROI]]):
         # Remove existing meshes

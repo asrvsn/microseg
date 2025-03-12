@@ -23,6 +23,9 @@ def mask_to_polygons(mask: np.ndarray, rdp_eps: float=0., erode: int=0, dilate: 
     - mask: integer mask of shape (H, W)
     - rdp_eps: epsilon parameter in the Ramer-Douglas-Peucker algorithm for polygon simplification
     - erode: number of pixels to erode the mask by before computing the polygon to get rid of single-pixel artifacts
+
+    TODO: use marching squares to get better polygons?
+    https://nils-olovsson.se/articles/marching_squares/
     '''
     assert mask.ndim == 2, 'Mask must be 2D'
     assert rdp_eps >= 0
