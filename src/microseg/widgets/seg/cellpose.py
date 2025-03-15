@@ -64,10 +64,13 @@ class CellposeSegmentorWidget(AutoSegmentorWidget):
         if hasattr(self, '_cp_cellprob_sld'):
             self._cp_cellprob_sld.setValue(0.)
 
-    def recompute_auto(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
+    def produces_mask(self) -> bool:
+        return True
+
+    def recompute_auto(self, img: np.ndarray, poly: PlanarPolygon) -> np.ndarray:
         '''
         Compute cellpose polygons using with possible downscaling
-        Returns polygons in the original (un-downscaled) coordinate system
+        Returns mask in the original (un-downscaled) coordinate system
         '''
         # diam = poly.circular_radius() * 2
         diam = poly.diameter()
@@ -79,10 +82,7 @@ class CellposeSegmentorWidget(AutoSegmentorWidget):
         )[0]
         print(f'Cellpose mask computed with diameter {diam}, cellprob {cellprob}')
         assert mask.shape == img.shape[:2]
-        cp_polys = mask_to_polygons(mask)
-        print(f'Cellpose found {len(cp_polys)} valid polygons')
-        return cp_polys
-
+        return mask
 
     def keyPressEvent(self, evt):
         if evt.key() == QtCore.Qt.Key_Return and evt.modifiers() & Qt.ShiftModifier:

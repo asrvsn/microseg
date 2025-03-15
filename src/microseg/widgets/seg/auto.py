@@ -16,7 +16,7 @@ import skimage
 import skimage.restoration as skrest
 import traceback
 
-from matgeo import PlanarPolygon, Circle, Ellipse
+from matgeo import PlanarPolygon, Circle, Ellipse, PlanarPolygonPacking
 from microseg.widgets.pg import *
 from microseg.utils.image import rescale_intensity
 from .base import *
@@ -163,6 +163,70 @@ class ImageProcessingWidget(VLayoutWidget):
         self._poly = poly
         self._recalculate()
 
+class MaskProcessingWidget(VLayoutWidget):
+    processed = QtCore.Signal()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._erode_box = QSpinBox(minimum=0)
+        row = HLayoutWidget()
+        row.addWidget(QLabel('Erode:'))
+        row.addWidget(self._erode_box)
+        self.addWidget(row)
+        self._dilate_box = QSpinBox(minimum=0, maximum=self._erode_box.value())
+        row = HLayoutWidget()
+        row.addWidget(QLabel('Dilate:'))
+        row.addWidget(self._dilate_box)
+        self.addWidget(row)
+        row = HLayoutWidget()
+        row.addWidget(QLabel('Method:'))
+        self._method_box = QComboBox()
+        self._method_box.addItems(['marching_squares', 'standard'])
+        row.addWidget(self._method_box)
+        self.addWidget(row)
+        self._chull_box = QCheckBox('Use convex hull if invalid')
+        self.addWidget(self._chull_box)
+
+        # State
+        self._reset_state()
+
+        # Listeners
+        self._erode_box.valueChanged.connect(self._recalculate)
+        self._dilate_box.valueChanged.connect(self._recalculate)
+        self._method_box.currentIndexChanged.connect(self._recalculate)
+        self._chull_box.toggled.connect(self._recalculate)
+
+    ''' Public '''
+
+    def setData(self, mask: np.ndarray):
+        self._reset_state()
+        self._mask = mask
+        self._recalculate()
+
+    @property
+    def polygons(self) -> List[PlanarPolygon]:
+        return self._polygons
+
+    ''' Privates '''
+
+    def _reset_state(self):
+        self._mask = None
+        self._polygons = None
+        self._erode_box.setValue(0)
+        self._dilate_box.setValue(0)
+        self._dilate_box.setMaximum(self._erode_box.value())
+
+    def _recalculate(self):
+        if not self._mask is None:
+            self._polygons = PlanarPolygonPacking.from_mask(
+                self._mask,
+                erode=self._erode_box.value(),
+                dilate=self._dilate_box.value(),
+                use_chull_if_invalid=self._chull_box.isChecked(),
+                method=self._method_box.currentText(),
+            ).polygons
+            self.processed.emit()
+        self._dilate_box.setMaximum(self._erode_box.value())
 
 class PolySelectionWidget(VLayoutWidget):
     '''
@@ -212,7 +276,7 @@ class PolySelectionWidget(VLayoutWidget):
         for name, filt in self._filters.items():
             fn = self.FILTERS[name]
             hist_data = np.array([fn(poly, img) for poly in self._polys])
-            print(f'{name} has {len(hist_data)} values')
+            # print(f'{name} has {len(hist_data)} values')
             filt.setData(hist_data, percentile=True)
         self._recompute()
 
@@ -263,6 +327,13 @@ class AutoSegmentorWidget(SegmentorWidget):
         self._main.addWidget(self._auto_wdg)
         self._main.addWidget(self._compute_btn)
         self._main.addSpacing(10)
+        ## 2a. Mask processing (optional)
+        if self.produces_mask():
+            self._mask_wdg = VGroupBox('Mask processing')
+            self._main.addWidget(self._mask_wdg)
+            self._mask_proc = MaskProcessingWidget()
+            self._mask_wdg.addWidget(self._mask_proc)
+            self._main.addSpacing(10)
         ## 3. Polygon selection
         poly_gbox = VGroupBox('Polygon selection')
         self._main.addWidget(poly_gbox)
@@ -273,6 +344,8 @@ class AutoSegmentorWidget(SegmentorWidget):
         # Listeners
         self._img_proc.processed.connect(self._on_img_proc)
         self._compute_btn.clicked.connect(self._on_compute)
+        if self.produces_mask():
+            self._mask_proc.processed.connect(self._on_mask_proc)
         self._poly_sel.processed.connect(self._on_poly_sel)
 
     ''' Overrides '''
@@ -286,8 +359,13 @@ class AutoSegmentorWidget(SegmentorWidget):
         pass
 
     @abc.abstractmethod
-    def recompute_auto(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        ''' Recompute auto-segmentation, setting state as necessary '''
+    def recompute_auto(self, img: np.ndarray, poly: PlanarPolygon) -> Union[np.ndarray, List[PlanarPolygon]]:
+        ''' Recompute auto-segmentation, setting state as necessary, returns either mask or polygons '''
+        pass
+
+    @abc.abstractmethod
+    def produces_mask(self) -> bool:
+        ''' Whether this segmentor produces a mask or polygons directly '''
         pass
 
     def set_proposals(self, polys: List[PlanarPolygon]):
@@ -296,6 +374,8 @@ class AutoSegmentorWidget(SegmentorWidget):
     def reset_state(self):
         super().reset_state()
         self._compute_btn.setEnabled(False)
+        if self.produces_mask():
+            self._mask_proc.reset_state()
 
     ''' Private ''' 
 
@@ -305,9 +385,16 @@ class AutoSegmentorWidget(SegmentorWidget):
     def _on_compute(self):
         img, F, F_inv = self._img_proc.processed_img, self._img_proc.poly_transform, self._img_proc.poly_transform_inv
         assert not img is None
-        polys = self.recompute_auto(img, F(self._poly))
-        polys = [F_inv(p) for p in polys] 
-        self.set_proposals(polys)
+        if self.produces_mask():
+            mask = self.recompute_auto(img, F(self._poly))
+            self._mask_proc.setData(mask) # self.set_proposals() called through bubbled event
+        else:
+            polys = self.recompute_auto(img, F(self._poly))
+            polys = [F_inv(p) for p in polys] 
+            self.set_proposals(polys)
+
+    def _on_mask_proc(self):
+        self.set_proposals(self._mask_proc.polygons)
 
     def _on_poly_sel(self, polys: List[PlanarPolygon]):
         super().set_proposals(polys)

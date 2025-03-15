@@ -64,6 +64,9 @@ class ThresholdSegmentorWidget(AutoSegmentorWidget):
     def auto_name(self) -> str:
         return 'Threshold'
     
+    def produces_mask(self) -> bool:
+        return True
+    
     def preprocess_image(self, img: np.ndarray) -> np.ndarray:
         """Preprocess image before thresholding"""
         processed = img.copy()
@@ -76,8 +79,8 @@ class ThresholdSegmentorWidget(AutoSegmentorWidget):
         
         return processed
     
-    def make_proposals(self, img: np.ndarray, poly: PlanarPolygon) -> List[PlanarPolygon]:
-        """Generate segmentation proposals using properties of the user-drawn polygon"""
+    def recompute_auto(self, img: np.ndarray, poly: PlanarPolygon) -> np.ndarray:
+        """Generate segmentation proposal mask using properties of the user-drawn polygon"""
         self._method = self._method_drop.currentText()
         # Get reference measurements from user polygon
         ref_mask = poly.to_mask(img.shape)
@@ -98,9 +101,6 @@ class ThresholdSegmentorWidget(AutoSegmentorWidget):
             thresh = self.METHODS[self._method](processed)
         
         mask = processed > thresh
-        polys = mask_to_polygons(mask)
-        return polys
-        
-    def recompute_auto(self) -> List[PlanarPolygon]:
-        return self.make_proposals(self._img, self._poly)
+        return mask
+
 
