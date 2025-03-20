@@ -21,7 +21,7 @@ def get_voxel_size(path: str, fmt: str='XYZ') -> np.ndarray:
     '''
     assert os.path.exists(path), f'File not found: {path}'
     _, fext = os.path.splitext(path)
-    if fext in ['.czi']:
+    if fext in ['.czi', '.tif', '.tiff']:
         sizes = AICSImage(path).physical_pixel_sizes
         return np.array([{
             'Z': sizes.Z, 'Y': sizes.Y, 'X': sizes.X
