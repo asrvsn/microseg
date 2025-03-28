@@ -11,6 +11,7 @@ import pyqtgraph.opengl as gl
 
 from matgeo import Triangulation
 from .base import MainWindow
+from microseg.utils.colors import *
 
 class GrabbableGLViewWidget(gl.GLViewWidget):
     '''
@@ -103,25 +104,33 @@ class GLZStackItem(gl.GLVolumeItem):
         vol = vol.astype(np.float32)
         vol = (vol - vol.min()) / (vol.max() - vol.min())  # Normalize to [0,1]
         
-        # Create alpha mapping based on intensity
-        alpha = np.zeros_like(vol)
-        alpha[vol > 0.05] = 0.2
-        alpha[vol > 0.2] = 0.4
-        alpha[vol > 0.4] = 0.6
-        alpha[vol > 0.6] = 0.8
+        # Create alpha channel - transparent where intensity is 0, otherwise proportional to intensity
+        alpha = vol.copy()
+        # Optional: Set a minimum threshold to remove noise
+        alpha[vol < 0.01] = 0  # Black regions (near zero) become fully transparent
         
-        # Create final RGBA volume
+        # Create final RGBA volume - maintain original intensities for RGB channels
         vol_rgba = np.stack([vol] * 3 + [alpha], axis=-1)
         vol_rgba = (vol_rgba * 255).astype(np.ubyte)
         return vol_rgba
     
 class GLTriangulationItem(gl.GLMeshItem):
+    FACE_COLORS = cc_glasbey_01_rgba
     
-    def __init__(self, tri: Triangulation, *args, md_kwargs=dict(), **kwargs):
+    def __init__(self, tri: Triangulation, *args, color_mode=None, only_watertight=False, md_kwargs=dict(), **kwargs):
+        assert color_mode in [None, 'cc', 'face']
+        self._color_mode = color_mode
         super().__init__(*args, **kwargs)
-        self.setData(tri, **md_kwargs)
+        self.setData(tri, only_watertight=only_watertight, **md_kwargs)
 
-    def setData(self, tri: Triangulation, **md_kwargs):
+    def setData(self, tri: Triangulation, only_watertight: bool=False, **md_kwargs):
+        if self._color_mode == 'cc':
+            tris = tri.get_connected_components(only_watertight=only_watertight)
+            labels = np.concatenate([np.full(len(t.simplices), i) for i, t in enumerate(tris)])
+            tri = Triangulation.merge(tris)
+            md_kwargs['faceColors'] = self.FACE_COLORS[labels % len(self.FACE_COLORS)]
+        elif self._color_mode == 'face':
+            md_kwargs['faceColors'] = self.FACE_COLORS[np.arange(len(tri.simplices)) % len(self.FACE_COLORS)]
         md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, **md_kwargs)
         self.setMeshData(meshdata=md)
 

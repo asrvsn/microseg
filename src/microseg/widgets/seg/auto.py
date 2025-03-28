@@ -374,7 +374,7 @@ class AutoSegmentorWidget(SegmentorWidget):
     def reset_state(self):
         super().reset_state()
         self._compute_btn.setEnabled(False)
-        if self.produces_mask():
+        if hasattr(self, '_mask_proc'):
             self._mask_proc.reset_state()
 
     ''' Private ''' 

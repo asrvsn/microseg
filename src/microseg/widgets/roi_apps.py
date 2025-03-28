@@ -5,6 +5,11 @@ from typing import Dict, Optional
 import pyqtgraph.opengl as gl # Has to be imported before qtpy
 from matgeo import Triangulation
 from scipy.spatial import cKDTree
+import skimage
+import skimage.exposure
+import skimage.filters as skfilt
+import scipy
+import scipy.ndimage
 
 from .base import *
 from .pg import *
@@ -155,6 +160,20 @@ class ZStackObjectViewer(SaveableWidget):
         'glOptions': 'translucent',
     }
     facecolors = cc_glasbey_01_rgba
+    thr_methods = {
+        'none': lambda x: x,
+        'otsu': lambda x: x > skfilt.threshold_otsu(x),
+        'li': lambda x: x > skfilt.threshold_li(x),
+        'yen': lambda x: x > skfilt.threshold_yen(x),
+        'isodata': lambda x: x > skfilt.threshold_isodata(x),
+        'triangle': lambda x: x > skfilt.threshold_triangle(x),
+        'minimum': lambda x: x > skfilt.threshold_minimum(x),
+    }
+    deconv_methods = {
+        'none': lambda x, **kwargs: x,
+        'wiener': lambda x, **kwargs: skimage.restoration.wiener(x, **kwargs),
+        'richardson_lucy': lambda x, **kwargs: skimage.restoration.richardson_lucy(x, **kwargs),
+    }
 
     def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, *args, **kwargs): 
         super().__init__(*args, **kwargs)
@@ -183,12 +202,14 @@ class ZStackObjectViewer(SaveableWidget):
         # Create view mode controls
         self._mc_level = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
         self._mc_level.setSingleStep(0.1)
+        self._wt_box = QCheckBox('Watertight only')
 
         self._settings_layout.addWidget(QLabel("Render:"))
         self._controls = [
             ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
             ['Volume', None, self._update_volume, []],
-            ['Surface', None, self._update_surface, [self._mc_level]],
+            ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
+            ['Centroids', None, self._update_centroids, []],
         ]
         def _register_control(i: int, name: str, update_fn: Callable, opts: List[QWidget]):
             self._settings_layout.addSpacing(5)
@@ -200,16 +221,50 @@ class ZStackObjectViewer(SaveableWidget):
                 opt.setEnabled(False)
                 self._settings_layout.addSpacing(5)
                 self._settings_layout.addWidget(opt)
-                opt.valueChanged.connect(lambda _: self._update_view(i))
+                if hasattr(opt, 'stateChanged'):
+                    opt.stateChanged.connect(lambda _: self._update_view(i))
+                elif hasattr(opt, 'valueChanged'):
+                    opt.valueChanged.connect(lambda _: self._update_view(i))
+                else:
+                    raise ValueError(f'Unknown option type: {type(opt)}')
 
         for i, (name, _, update_fn, opts) in enumerate(self._controls):
             _register_control(i, name, update_fn, opts)
+
+        # Rescale
+        self._settings_layout.addSpacing(5)
+        self._rescale_box = QCheckBox('Rescale by slice')
+        self._rescale_box.stateChanged.connect(lambda: self._update_processed_stack())
+        self._settings_layout.addWidget(self._rescale_box)
+
+        # Thresholding
+        self._settings_layout.addSpacing(5)
+        self._thr_box = QComboBox()
+        self._thr_box.addItems(self.thr_methods.keys())
+        self._thr_box.currentTextChanged.connect(lambda: self._update_processed_stack())
+        self._settings_layout.addWidget(QLabel('Threshold:'))
+        self._settings_layout.addWidget(self._thr_box)
+
+        # Deconvolution
+        self._settings_layout.addSpacing(5)
+        self._deconv_box = QComboBox()
+        self._deconv_box.addItems(self.deconv_methods.keys())
+        self._deconv_box.currentTextChanged.connect(lambda: self._update_processed_stack())
+        self._settings_layout.addWidget(QLabel('Deconvolve Z:'))
+        self._settings_layout.addWidget(self._deconv_box)
+        self._settings_layout.addWidget(QLabel('PSF Sigma (z):'))
+        self._psf_sigma_z = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=1.0)
+        self._psf_sigma_z.setSingleStep(0.1)
+        self._settings_layout.addWidget(self._psf_sigma_z)
+        self._psf_sigma_z.valueChanged.connect(lambda: self._update_processed_stack())
 
         # Initialize state
         self._active = [False] * len(self._controls)
         self._z = 0
         self._chan = 0
         self._stack = None
+        self._processed_stack = None
+        self._surface = None
         self._meshes = []
         self._rois = []
         self._is_proposing = False
@@ -223,7 +278,7 @@ class ZStackObjectViewer(SaveableWidget):
         for i in range(len(self._controls)):
             self._controls[i][1] = None # Reset state
         self._stack = img
-        # Toggle some defaults: (1) slice and (2) surface
+        self._update_processed_stack()
 
     def setROIs(self, rois: List[List[ROI]]):
         assert not self._is_proposing
@@ -283,6 +338,58 @@ class ZStackObjectViewer(SaveableWidget):
     def _update_view(self, i):
         self._controls[i][1] = self._controls[i][2](self._controls[i][1])
 
+    def _update_processed_stack(self):
+        data = self._stack[:, :, :, self._chan].copy() # ZXY
+
+        if self._rescale_box.isChecked():
+            for z in range(data.shape[0]):
+                data[z] = skimage.exposure.rescale_intensity(data[z])
+
+        if self._deconv_box.currentText() != 'none':
+            # Create anisotropic Gaussian PSF for fluorescence microscopy
+            sigma_z = self._psf_sigma_z.value()
+            
+            # PSF kernel size should be appropriate for the dimensions of the stack
+            # For Z, use a reasonable multiple of sigma
+            z_size = min(self._stack.shape[0], int(sigma_z * 8))
+            z_size = z_size if z_size % 2 == 1 else z_size + 1
+            
+            # For XY, use a fixed small size since we primarily care about Z deconvolution
+            # But ensure it's reasonable relative to image dimensions
+            xy_size = 5
+            
+            # Create a point source (impulse) at the center of the volume
+            psf = np.zeros((z_size, xy_size, xy_size))
+            center = (z_size//2, xy_size//2, xy_size//2)
+            psf[center] = 1.0
+            
+            # Apply anisotropic Gaussian filter with reflect mode
+            psf = scipy.ndimage.gaussian_filter(
+                psf, 
+                sigma=(sigma_z, 0.5, 0.5),  # Anisotropic: (z, y, x)
+                mode='reflect'  # Better for optical systems than 'constant'
+            )
+            
+            # Normalize PSF
+            psf /= psf.sum()
+
+            # Apply deconv
+            deconv_fn = self.deconv_methods[self._deconv_box.currentText()]
+            params = {'psf': psf}
+            if self._deconv_box.currentText() == 'richardson_lucy':
+                params['num_iter'] = 5  # Could add a control for this
+            elif self._deconv_box.currentText() == 'wiener':
+                params['balance'] = 0.1  # Could add a control for this
+            deconvolved = deconv_fn(data, **params)
+            if np.any(~np.isfinite(data)):
+                mask = ~np.isfinite(data)
+                deconvolved[mask] = data
+            data = deconvolved
+
+        data = self.thr_methods[self._thr_box.currentText()](data)
+        self._processed_stack = data
+        print(f'Processed stack')
+
     def _update_slice(self, item: Optional[gl.GLImageItem]) -> gl.GLImageItem:
         print(f'updating slice to {self._z}')
         img = self._stack[self._z, :, :, self._chan].T
@@ -303,25 +410,39 @@ class ZStackObjectViewer(SaveableWidget):
     
     def _update_volume(self, item: Optional[GLZStackItem]) -> GLZStackItem:
         if item is None:
-            item = GLZStackItem(self._stack[:, :, :, self._chan], xyz_scale=(1, 1, self._z_aniso))
+            item = GLZStackItem(self._processed_stack, xyz_scale=(1, 1, self._z_aniso))
+            # print(f'Z anisotropy: {self._z_aniso}')
+            # item = GLZStackItem(self._processed_stack)
         else:
-            item.setData(self._stack[:, :, :, self._chan])
+            item.setData(self._processed_stack)
         return item
 
     def _update_surface(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
         print(f'update_surface called with item {item}')
-        vol = self._stack[:, :, :, self._chan].transpose(2, 1, 0) # ZXY -> XYZ
+        vol = self._processed_stack.transpose(2, 1, 0) # ZXY -> XYZ
         level = self._mc_level.value() * (vol.max() - vol.min()) + vol.min()
-        tri = Triangulation.from_volume(
+        self._surface = Triangulation.from_volume(
             vol,
             method='marching_cubes',
-            spacing=(1, 1, self._z_aniso),
+            # spacing=(1, 1, self._z_aniso),
             level=level,
         )
+        self._surface.pts[:, 2] *= self._z_aniso # Scale after segmentation
+        wt = self._wt_box.isChecked()
         if item is None:
-            item = GLTriangulationItem(tri)
+            item = GLTriangulationItem(self._surface, color_mode='cc', only_watertight=wt)
         else:
-            item.setData(tri)
+            item.setData(self._surface, only_watertight=wt)
+        return item
+    
+    def _update_centroids(self, item: Optional[gl.GLScatterPlotItem]) -> gl.GLScatterPlotItem:
+        assert not self._surface is None
+        ccs = self._surface.get_connected_components()
+        pts = np.array([cc.get_centroid() for cc in ccs])
+        if item is None:
+            item = gl.GLScatterPlotItem(pos=pts)
+        else:
+            item.setData(pos=pts)
         return item
 
     def _render_rois(self, rois: List[List[LabeledROI]]):
