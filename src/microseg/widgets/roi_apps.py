@@ -443,16 +443,16 @@ class ZStackObjectViewer(SaveableWidget):
         ccs = self._surface.get_connected_components()
         self._centroids = np.array([cc.get_centroid() for cc in ccs])
         if item is None:
-            item = gl.GLScatterPlotItem(pos=self._centroids)
+            item = gl.GLScatterPlotItem(pos=self._centroids, color=(0, 1, 0, 1))
         else:
-            item.setData(pos=self._centroids)
+            item.setData(pos=self._centroids, color=(0, 1, 0, 1))
         return item
     
     def _update_triangulation(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
         assert not self._centroids is None
         tri = Triangulation.surface_3d(self._centroids, method='advancing_front')
         if item is None:
-            item = GLTriangulationItem(tri, color_mode='cc', only_watertight=False)
+            item = GLTriangulationItem(tri, color_mode='cc', only_watertight=False, **GLHoverableSurfaceViewWidget.mesh_opts)
         else:
             item.setData(tri, only_watertight=False)
         return item
