@@ -210,6 +210,7 @@ class ZStackObjectViewer(SaveableWidget):
             ['Volume', None, self._update_volume, []],
             ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
             ['Centroids', None, self._update_centroids, []],
+            ['Triangulation', None, self._update_triangulation, []],
         ]
         def _register_control(i: int, name: str, update_fn: Callable, opts: List[QWidget]):
             self._settings_layout.addSpacing(5)
@@ -263,8 +264,9 @@ class ZStackObjectViewer(SaveableWidget):
         self._z = 0
         self._chan = 0
         self._stack = None
-        self._processed_stack = None
+        self._vol = None
         self._surface = None
+        self._centroids = None
         self._meshes = []
         self._rois = []
         self._is_proposing = False
@@ -387,7 +389,7 @@ class ZStackObjectViewer(SaveableWidget):
             data = deconvolved
 
         data = self.thr_methods[self._thr_box.currentText()](data)
-        self._processed_stack = data
+        self._vol = data
         print(f'Processed stack')
 
     def _update_slice(self, item: Optional[gl.GLImageItem]) -> gl.GLImageItem:
@@ -410,16 +412,16 @@ class ZStackObjectViewer(SaveableWidget):
     
     def _update_volume(self, item: Optional[GLZStackItem]) -> GLZStackItem:
         if item is None:
-            item = GLZStackItem(self._processed_stack, xyz_scale=(1, 1, self._z_aniso))
+            item = GLZStackItem(self._vol, xyz_scale=(1, 1, self._z_aniso))
             # print(f'Z anisotropy: {self._z_aniso}')
-            # item = GLZStackItem(self._processed_stack)
+            # item = GLZStackItem(self._vol)
         else:
-            item.setData(self._processed_stack)
+            item.setData(self._vol)
         return item
 
     def _update_surface(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
         print(f'update_surface called with item {item}')
-        vol = self._processed_stack.transpose(2, 1, 0) # ZXY -> XYZ
+        vol = self._vol.transpose(2, 1, 0) # ZXY -> XYZ
         level = self._mc_level.value() * (vol.max() - vol.min()) + vol.min()
         self._surface = Triangulation.from_volume(
             vol,
@@ -438,11 +440,20 @@ class ZStackObjectViewer(SaveableWidget):
     def _update_centroids(self, item: Optional[gl.GLScatterPlotItem]) -> gl.GLScatterPlotItem:
         assert not self._surface is None
         ccs = self._surface.get_connected_components()
-        pts = np.array([cc.get_centroid() for cc in ccs])
+        self._centroids = np.array([cc.get_centroid() for cc in ccs])
         if item is None:
-            item = gl.GLScatterPlotItem(pos=pts)
+            item = gl.GLScatterPlotItem(pos=self._centroids)
         else:
-            item.setData(pos=pts)
+            item.setData(pos=self._centroids)
+        return item
+    
+    def _update_triangulation(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
+        assert not self._centroids is None
+        tri = Triangulation.surface_3d(self._centroids, method='advancing_front')
+        if item is None:
+            item = GLTriangulationItem(tri, color_mode='cc', only_watertight=False)
+        else:
+            item.setData(tri, only_watertight=False)
         return item
 
     def _render_rois(self, rois: List[List[LabeledROI]]):
