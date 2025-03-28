@@ -13,6 +13,7 @@ import pdb
 from matgeo import PlanarPolygon, Circle, Ellipsoid, Ellipse
 
 from .base import *
+from .rois_2d import *
 from microseg.utils import pg_colors
 
 '''
@@ -55,8 +56,12 @@ class LabeledROI:
             return LabeledEllipseItem(self, **kwargs)
         elif type(self.roi) is Circle:
             return LabeledCircleItem(self, **kwargs)
+        elif type(self.roi) is LabeledPolygon:
+            return LabeledPolygonItem(self, **kwargs)
+        elif type(self.roi) is LabeledCircle:
+            return LabeledCircleItem(self, **kwargs)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f'Invalid ROI type {type(self.roi)}')
         
     def toPyQTOrientation(self, img_shape: Tuple[int, int]) -> 'LabeledROI':
         '''

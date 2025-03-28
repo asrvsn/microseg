@@ -18,7 +18,7 @@ import traceback
 
 from matgeo import PlanarPolygon, Circle, Ellipse, PlanarPolygonPacking
 from microseg.widgets.pg import *
-from microseg.utils.image import rescale_intensity
+from microseg.utils.image import rescale_intensity, rgb_to_gray
 from .base import *
 from .manual import ROICreatorWidget
 
@@ -269,7 +269,10 @@ class PolySelectionWidget(VLayoutWidget):
 
     def setData(self, img: np.ndarray, poly: PlanarPolygon, polys: List[PlanarPolygon]):
         print(f'Polygon Selector got {len(polys)} polygons')
-        assert img.ndim == 2
+        if img.ndim == 3 and img.shape[2] == 3:
+            img = rgb_to_gray(img)
+        else:
+            assert img.ndim == 2
         self._img = img
         self._poly = poly
         self._polys = np.array(polys)

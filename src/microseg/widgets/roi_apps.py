@@ -59,6 +59,7 @@ class ImageSegmentorApp(SaveableApp):
 
     def copyIntoState(self, state: List[List[ROI]]):
         self._rois = [[r.copy() for r in subrois] for subrois in state]
+        # pdb.set_trace()
         assert len(self._rois) == self._zmax, f'Expected {self._zmax} z-slices, got {len(self._rois)}'
         self.refreshROIs(push=False)
 

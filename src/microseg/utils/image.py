@@ -8,6 +8,7 @@ from typing import Tuple
 import math
 import skimage 
 import skimage.exposure
+from PIL import Image
 
 from matgeo import PlanarPolygon
 
@@ -37,3 +38,12 @@ def rescale_intensity(img: np.ndarray, i0=2, i1=98) -> np.ndarray:
             for c in range(img.shape[2])
         ), axis=-1)
     return img
+
+def rgb_to_gray(img: np.ndarray) -> np.ndarray:
+    '''
+    Convert RGB image to grayscale
+    ''' 
+    assert img.ndim == 3 and img.shape[2] == 3
+    assert img.dtype == np.uint8
+    pil_img = Image.fromarray(img.astype(np.uint8)).convert('L')
+    return np.array(pil_img)
