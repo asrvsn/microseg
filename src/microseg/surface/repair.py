@@ -9,10 +9,10 @@ from qtpy.QtWidgets import QPushButton
 
 from matgeo import Triangulation
 
-from .widgets.base import *
-from .widgets.pg_gl import *
-from .widgets.seg_2d import *
-from .utils.colors import map_colors
+from microseg.widgets.base import *
+from microseg.widgets.pg_gl import *
+from microseg.widgets.seg_2d import *
+from microseg.utils.colors import map_colors
 
 class Register3DWidget(SaveableWidget):
     undo_n: int = 100

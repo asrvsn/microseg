@@ -1,7 +1,7 @@
 '''
 Boundary drawing (for drawing a single polygon on image or z-stack) app
 '''
-from .widgets.roi_apps import *
+from microseg.widgets.roi_apps import *
 
 class BoundaryDrawerApp(ImageSegmentorApp):
 
