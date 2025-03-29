@@ -5,7 +5,9 @@ import os
 import numpy as np
 import pyqtgraph.opengl as gl
 from scipy.spatial.distance import pdist
-from qtpy.QtWidgets import QPushButton
+from qtpy.QtWidgets import QPushButton, QCheckBox
+from qtpy.QtGui import QKeyEvent
+from qtpy.QtCore import Qt
 
 from matgeo import Triangulation
 
@@ -14,7 +16,7 @@ from microseg.widgets.pg_gl import *
 from microseg.widgets.seg_2d import *
 from microseg.utils.colors import map_colors
 
-class Register3DWidget(SaveableWidget):
+class SurfaceConstructorApp(SaveableApp):
     undo_n: int = 100
 
     def __init__(self, *args, **kwargs):
@@ -61,7 +63,7 @@ class Register3DWidget(SaveableWidget):
         else:
             tri.match_orientation(self._tri)
         self._tri = tri
-        self._vw.setMeshData(self._tri)
+        self._vw.setTriangulation(self._tri)
 
     def _collapse_labels(self):
         if not (self._tri is None):
@@ -118,7 +120,7 @@ class Register3DWindow(MainWindow):
 
         # Widgets
         self.setWindowTitle('Register 3D')
-        self._reg = Register3DWidget()
+        self._reg = SurfaceConstructorApp()
         self.setCentralWidget(self._reg)
         self._reg.setData(pts)
         self.resizeToActiveScreen()
@@ -135,13 +137,136 @@ class Register3DWindow(MainWindow):
     @staticmethod
     def make_path(name: str) -> str:
         return f'{name}.registered.txt'
+    
+class SurfaceConstructorApp(SaveableApp):
+    tri_methods = [
+        'advancing_front',
+    ]
+
+    def __init__(self, pts_path: str, *args, **kwargs):
+        # State
+        assert os.path.isfile(pts_path), f'{pts_path} is not a file'
+        self._pts = np.loadtxt(pts_path)
+        self._tri = None
+
+        # Widgets
+        self._main = VLayoutWidget()
+        self._vw = GLSelectableSurfaceViewWidget()
+        self._vw.selectionChanged.connect(self._selection_changed)
+        self._main.addWidget(self._vw)
+        self._settings = HLayoutWidget()
+        self._main.addWidget(self._settings)
+        self.setCentralWidget(self._main)
+
+        self._settings.addWidget(QLabel('Method:'))
+        self._method_cb = QComboBox()
+        self._method_cb.addItems(self.tri_methods)
+        self._settings.addWidget(self._method_cb)
+        self._method_cb.currentIndexChanged.connect(self._recompute_tri)
+        self._merge_btn = QPushButton('Merge points')
+        self._settings.addWidget(self._merge_btn)
+        self._merge_btn.setEnabled(False)
+        self._merge_btn.clicked.connect(self._merge_points)
+        self._delete_btn = QPushButton('Delete edge')
+        self._settings.addWidget(self._delete_btn)
+        self._delete_btn.setEnabled(False)
+        self._delete_btn.clicked.connect(self._delete_edge)
+        self._norm_btn = QPushButton('Toggle normals')
+        self._settings.addWidget(self._norm_btn)
+        self._norm_btn.clicked.connect(self._vw.toggleNormals)
+
+        self._settings.addStretch()
+
+        self._dist_lbl = QLabel(f'Distance: -')
+        self._settings.addWidget(self._dist_lbl)
+        self._dark_box = QCheckBox('Dark')
+        self._settings.addWidget(self._dark_box)
+        self._dark_box.clicked.connect(self._toggle_dark)
+
+        self._recompute_tri(push=False)
+
+        super().__init__(
+            f'Constructing surface from {os.path.basename(pts_path)}', 
+            f'{pts_path}.surface',
+            *args, **kwargs
+        )
+
+    ''' Overrides '''
+
+    def copyIntoState(self, tri: Triangulation):
+        self._pts = tri.pts
+        self._tri = tri
+        self._vw.setTriangulation(tri)
+
+    def copyFromState(self) -> Triangulation:
+        return self._tri.copy()
+    
+    def readData(self, path: str) -> Triangulation:
+        return pickle.load(open(path, 'rb'))
+    
+    def writeData(self, path: str, tri: Triangulation):
+        pickle.dump(tri, open(path, 'wb'))
+
+    def keyPressEvent(self, evt: QKeyEvent):
+        if evt.key() == Qt.Key_M:
+            self._merge_points()
+        elif evt.key() == Qt.Key_Delete:
+            self._delete_edge()
+        else:
+            super().keyPressEvent(evt)
+
+    ''' Privates '''
+
+    def _selection_changed(self, sel: np.ndarray):
+        if len(sel) < 2:
+            self._merge_btn.setEnabled(False)
+            self._delete_btn.setEnabled(False)
+        elif len(sel) == 2:
+            self._merge_btn.setEnabled(True)
+            self._delete_btn.setEnabled(True)
+        else:
+            self._merge_btn.setEnabled(True)
+            self._delete_btn.setEnabled(False)
+
+    def _merge_points(self):
+        sel = list(self._vw._selected)
+        assert len(sel) >= 2, 'Need at least 2 points to merge'
+        pts = np.delete(self._pts, sel, axis=0)
+        pt = self._pts[sel].mean(axis=0)
+        self._pts = np.vstack([pts, pt])
+        self._recompute_tri(push=True)  
+
+    def _delete_edge(self):
+        sel = list(self._vw._selected)
+        assert len(sel) == 2, 'Need exactly 2 points to delete edge'
+        if self._tri.contains_edge(sel[0], sel[1]):
+            tri = self._tri.remove_edge(sel[0], sel[1])
+            self.copyIntoState(tri)
+            self.pushEdit()
+        else:
+            print('Edge not found')
+
+    def _recompute_tri(self, push=True):
+        method = self._method_cb.currentText()
+        tri = Triangulation.surface_3d(self._pts, method=method)
+        self.copyIntoState(tri)
+        if push:
+            self.pushEdit()
+
+    def _toggle_dark(self):
+        if self._dark_box.isChecked():
+            pg.setConfigOption('background', 'k')
+            pg.setConfigOption('foreground', 'w')
+        else:
+            pg.setConfigOption('background', 'w')
+            pg.setConfigOption('foreground', 'k')
 
 if __name__ == '__main__':
     import sys
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('file', type=str, help='Path to source 3D positions (.txt or .csv)')
+    parser.add_argument('file', type=str, help='Path to source points file (numpy format)')
     parser.add_argument('--ignore-existing', action='store_true', help='Ignore previously registered points')
     args = parser.parse_args()
 
@@ -149,6 +274,6 @@ if __name__ == '__main__':
     # pg.setConfigOption('foreground', 'k')
 
     app = QtWidgets.QApplication(sys.argv)
-    window = Register3DWindow(args.file, ignore_existing=args.ignore_existing)
+    window = SurfaceConstructorApp(args.file, ignore_existing=args.ignore_existing)
     window.show()
     sys.exit(app.exec_())

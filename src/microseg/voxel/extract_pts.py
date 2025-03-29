@@ -4,7 +4,7 @@ Extract surface from 3D volume
 import pickle
 from microseg.widgets.roi_apps import *
 
-class SurfaceExtractorApp(VolumeSegmentorApp):
+class PointsExtractorApp(VolumeSegmentorApp):
 
     ''' Overrides '''
     
@@ -31,6 +31,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     win = QtWidgets.QApplication(sys.argv)
-    app = SurfaceExtractorApp(args.file, desc=args.d)
+    app = PointsExtractorApp(args.file, desc=args.d)
     app.show()
     sys.exit(win.exec())

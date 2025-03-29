@@ -115,7 +115,7 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
     undo_n: int=100
     redo_n: int=100
 
-    def __init__(self, title: str, save_path: str, *args, **kwargs):
+    def __init__(self, title: str, save_path: str, *args, ignore_existing: bool=False, **kwargs):
         super().__init__(*args, **kwargs)
         self._title = title
         self._save_path = save_path
@@ -123,8 +123,11 @@ class SaveableApp(MainWindow, metaclass=QtABCMeta):
 
         # Load existing data if exists
         if os.path.isfile(self._save_path):
-            print(f'Loading existing data from {self._save_path}')
-            self.copyIntoState(self.readData(self._save_path))
+            if ignore_existing:
+                print(f'Ignoring existing data at {self._save_path}')
+            else:
+                print(f'Loading existing data from {self._save_path}')
+                self.copyIntoState(self.readData(self._save_path))
 
         # Add Save menu item
         mbar = self.menuBar()

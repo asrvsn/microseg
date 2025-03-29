@@ -181,7 +181,7 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         self._cam_facing = None # Camera-facing points
         self._reset_mouse()
 
-    def setMeshData(self, tri: Triangulation, *args, **kwargs):
+    def setTriangulation(self, tri: Triangulation, *args, **kwargs):
         if self._tri is None:
             # If this is the first time receiving a mesh, move the camera point
             origin = tri.pts.mean(axis=0)
