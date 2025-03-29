@@ -16,7 +16,7 @@ from microseg.widgets.pg_gl import *
 from microseg.widgets.seg_2d import *
 from microseg.utils.colors import map_colors
 
-class SurfaceConstructorApp(SaveableApp):
+class SurfaceConstructorApp2(SaveableApp):
     undo_n: int = 100
 
     def __init__(self, *args, **kwargs):
@@ -148,48 +148,57 @@ class SurfaceConstructorApp(SaveableApp):
         assert os.path.isfile(pts_path), f'{pts_path} is not a file'
         self._pts = np.loadtxt(pts_path)
         self._tri = None
+        self._sel = []
 
         # Widgets
         self._main = VLayoutWidget()
         self._vw = GLSelectableSurfaceViewWidget()
-        self._vw.selectionChanged.connect(self._selection_changed)
+        self._vw.selectionChanged.connect(lambda sel: self._on_sel_change(sel))
         self._main.addWidget(self._vw)
         self._settings = HLayoutWidget()
         self._main.addWidget(self._settings)
-        self.setCentralWidget(self._main)
+
+        # center = self._pts.mean(axis=0)
+        # self._vw.opts['center'] = pg.Vector(*center)
+        # viewsize = np.linalg.norm(self._pts - center, axis=1).max()
+        # self._vw.setCameraPosition(distance=1.3 * viewsize)
 
         self._settings.addWidget(QLabel('Method:'))
         self._method_cb = QComboBox()
         self._method_cb.addItems(self.tri_methods)
         self._settings.addWidget(self._method_cb)
         self._method_cb.currentIndexChanged.connect(self._recompute_tri)
-        self._merge_btn = QPushButton('Merge points')
+        self._merge_btn = QPushButton('Merge nodes')
         self._settings.addWidget(self._merge_btn)
         self._merge_btn.setEnabled(False)
-        self._merge_btn.clicked.connect(self._merge_points)
-        self._delete_btn = QPushButton('Delete edge')
+        self._merge_btn.clicked.connect(self._merge_nodes)
+        self._delete_btn = QPushButton('Delete nodes')
         self._settings.addWidget(self._delete_btn)
         self._delete_btn.setEnabled(False)
-        self._delete_btn.clicked.connect(self._delete_edge)
-        self._norm_btn = QPushButton('Toggle normals')
-        self._settings.addWidget(self._norm_btn)
-        self._norm_btn.clicked.connect(self._vw.toggleNormals)
+        self._delete_btn.clicked.connect(self._delete_nodes)
 
         self._settings.addStretch()
 
-        self._dist_lbl = QLabel(f'Distance: -')
-        self._settings.addWidget(self._dist_lbl)
+        self._pts_box = QCheckBox('Points')
+        self._settings.addWidget(self._pts_box)
+        self._pts_box.clicked.connect(self._vw.togglePoints)
+        self._norm_box = QCheckBox('Normals')
+        self._settings.addWidget(self._norm_box)
+        self._norm_box.clicked.connect(self._vw.toggleNormals)
         self._dark_box = QCheckBox('Dark')
         self._settings.addWidget(self._dark_box)
         self._dark_box.clicked.connect(self._toggle_dark)
+        self._dist_lbl = QLabel(f'Distance: -')
+        self._settings.addWidget(self._dist_lbl)
 
         self._recompute_tri(push=False)
 
         super().__init__(
             f'Constructing surface from {os.path.basename(pts_path)}', 
-            f'{pts_path}.surface',
+            f'{os.path.splitext(pts_path)[0]}.surface',
             *args, **kwargs
         )
+        self.setCentralWidget(self._main)
 
     ''' Overrides '''
 
@@ -207,48 +216,41 @@ class SurfaceConstructorApp(SaveableApp):
     def writeData(self, path: str, tri: Triangulation):
         pickle.dump(tri, open(path, 'wb'))
 
-    def keyPressEvent(self, evt: QKeyEvent):
-        if evt.key() == Qt.Key_M:
-            self._merge_points()
-        elif evt.key() == Qt.Key_Delete:
-            self._delete_edge()
-        else:
-            super().keyPressEvent(evt)
-
     ''' Privates '''
 
-    def _selection_changed(self, sel: np.ndarray):
+    def _on_sel_change(self, sel: list):
+        print(f'Selection changed: {sel}')
+        self._sel = sel
         if len(sel) < 2:
             self._merge_btn.setEnabled(False)
-            self._delete_btn.setEnabled(False)
-        elif len(sel) == 2:
-            self._merge_btn.setEnabled(True)
-            self._delete_btn.setEnabled(True)
         else:
             self._merge_btn.setEnabled(True)
+        if len(sel) in [1, 2]:
+            self._delete_btn.setEnabled(True)
+        else:
             self._delete_btn.setEnabled(False)
 
-    def _merge_points(self):
-        sel = list(self._vw._selected)
-        assert len(sel) >= 2, 'Need at least 2 points to merge'
-        pts = np.delete(self._pts, sel, axis=0)
-        pt = self._pts[sel].mean(axis=0)
+    def _merge_nodes(self):
+        assert len(self._sel) >= 2, 'Need at least 2 points to merge'
+        pts = np.delete(self._pts, self._sel, axis=0)
+        pt = self._pts[self._sel].mean(axis=0)
         self._pts = np.vstack([pts, pt])
         self._recompute_tri(push=True)  
 
-    def _delete_edge(self):
-        sel = list(self._vw._selected)
-        assert len(sel) == 2, 'Need exactly 2 points to delete edge'
-        if self._tri.contains_edge(sel[0], sel[1]):
-            tri = self._tri.remove_edge(sel[0], sel[1])
-            self.copyIntoState(tri)
-            self.pushEdit()
+    def _delete_nodes(self):
+        if len(self._sel) == 1:
+            tri = self._tri.remove_node(self._sel[0])
+        elif len(self._sel) == 2:
+            tri = self._tri.remove_edge(self._sel[0], self._sel[1])
         else:
-            print('Edge not found')
+            raise ValueError(f'Need exactly 1 or 2 points to delete, got {len(self._sel)}')
+        self.copyIntoState(tri)
+        self.pushEdit()
 
     def _recompute_tri(self, push=True):
         method = self._method_cb.currentText()
         tri = Triangulation.surface_3d(self._pts, method=method)
+        # tri.orient_outward(tri.pts.mean(axis=0))
         self.copyIntoState(tri)
         if push:
             self.pushEdit()

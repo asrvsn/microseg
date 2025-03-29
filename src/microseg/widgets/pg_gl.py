@@ -156,9 +156,11 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         self._mesh = gl.GLMeshItem(**self.mesh_opts)
         self._normals = gl.GLLinePlotItem(color=(1,1,1,1), antialias=True)
         self._sp_hov = gl.GLScatterPlotItem(pxMode=True)
+        self._points = gl.GLScatterPlotItem(pxMode=True)
         self.addItem(self._mesh)
         self.addItem(self._normals)
         self.addItem(self._sp_hov)
+        self.addItem(self._points)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setMouseTracking(True)
 
@@ -169,6 +171,7 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         # State
         self.cam_motion_enabled = True
         self._show_normals = False
+        self._show_points = False
         self._mat = None
         self._dragging_cam = False
         self._tri = None
@@ -194,12 +197,17 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
         self._tri_normals = tri.compute_normals()
         self._tri_centroids = tri.compute_centroids()
         self._redrawNormals()
+        self._redrawPoints()
         self._escape()
         self._project()
 
     def toggleNormals(self):
         self._show_normals = not self._show_normals
         self._redrawNormals()
+
+    def togglePoints(self):
+        self._show_points = not self._show_points
+        self._redrawPoints()
 
     def _redrawNormals(self):
         if self._show_normals:
@@ -214,6 +222,13 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
             self._normals.setData(pos=lines, width=1, mode='lines')
         else:
             self._normals.setData(pos=np.empty((0, 3), dtype=np.float32))
+
+    def _redrawPoints(self):
+        if self._show_points:
+            print('Showing points')
+            self._points.setData(pos=self._tri.pts, size=self.size, color=(0,1,0,1))
+        else:
+            self._points.setData(pos=np.empty((0, 3), dtype=np.float32))
 
     def _project(self):
         if not self._tri is None:
@@ -275,9 +290,9 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
                     hovered = None
                 if hovered != self._hovered:
                     self._hovered = hovered
-                    self._redraw_sel()
+                    self._redraw_hov()
 
-    def _redraw_sel(self):
+    def _redraw_hov(self):
         hov = [] if self._hovered is None else [self._hovered]
         self._sp_hov.setData(pos=self._tri.pts[hov], size=self.h_size, color=(1,1,1,self.h_alpha))
 
@@ -286,7 +301,7 @@ class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
 
     def _escape(self):
         self._reset_mouse()
-        self._redraw_sel()
+        self._redraw_hov()
 
 class GLSelectableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
     '''
@@ -305,9 +320,15 @@ class GLSelectableSurfaceViewWidget(GLHoverableSurfaceViewWidget):
         self._selected = set()
 
     def _redraw_sel(self):
-        super()._redraw_sel()
-        self._sp_sel.setData(pos=self._tri.pts[list(self._selected)], size=self.h_size, color=(1,1,1,self.s_alpha))
-        self.selectionChanged.emit(list(self._selected))
+        sel = list(self._selected)
+        self._sp_sel.setData(pos=self._tri.pts[sel], size=self.h_size, color=(1,1,1,self.s_alpha))
+        # print(f'Selected these points: {sel}')
+        self.selectionChanged.emit(sel)
+
+    def _escape(self):
+        super()._escape()
+        self._selected = set()
+        self._redraw_sel()
 
     def mouseReleaseEvent(self, ev):
         super().mouseReleaseEvent(ev)

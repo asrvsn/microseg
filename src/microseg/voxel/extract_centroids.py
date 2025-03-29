@@ -1,10 +1,10 @@
 '''
-Extract surface from 3D volume
+Extract centroids of objects from 3D image
 '''
 import pickle
 from microseg.widgets.roi_apps import *
 
-class PointsExtractorApp(VolumeSegmentorApp):
+class CentroidsExtractorApp(VolumeSegmentorApp):
 
     ''' Overrides '''
     
@@ -12,12 +12,12 @@ class PointsExtractorApp(VolumeSegmentorApp):
         pass
 
     def writeData(self, path: str, data: Any):
-        ''' Write triangulation '''
-        tri = self._viewer._tri
-        if tri is None:
-            print('No surface to write')
+        ''' Write centroids '''
+        centroids = self._viewer._centroids
+        if centroids is None:
+            print('No centroids to write')
         else:
-            pickle.dump(tri, open(path, 'wb'))
+            np.savetxt(path, centroids)
             print(f'Wrote surface to {path}')
 
 
@@ -27,10 +27,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('file', type=str, help='Path to source img [tiff|jpg|png|czi|...]')
-    parser.add_argument('-d', type=str, default='surface', help='Descriptor')
+    parser.add_argument('-d', type=str, default='centroids', help='Descriptor')
     args = parser.parse_args()
 
     win = QtWidgets.QApplication(sys.argv)
-    app = PointsExtractorApp(args.file, desc=args.d)
+    app = CentroidsExtractorApp(args.file, desc=args.d)
     app.show()
     sys.exit(win.exec())

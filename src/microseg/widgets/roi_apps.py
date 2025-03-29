@@ -170,10 +170,6 @@ class ZStackObjectViewer(SaveableWidget):
         'triangle': lambda x: x > skfilt.threshold_triangle(x),
         'minimum': lambda x: x > skfilt.threshold_minimum(x),
     }
-    tri_methods = [
-        'advancing_front',
-        'alpha_shape',
-    ]
 
     def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, *args, **kwargs): 
         super().__init__(*args, **kwargs)
@@ -203,11 +199,6 @@ class ZStackObjectViewer(SaveableWidget):
         self._mc_level = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
         self._mc_level.setSingleStep(0.01)
         self._wt_box = QCheckBox('Watertight only')
-        self._centr_merge = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.0)
-        self._tri_method = QComboBox()
-        self._tri_method.addItems(self.tri_methods)
-        self._alpha_lvl = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=0.0)
-        self._alpha_lvl.setSingleStep(0.1)
 
         self._settings_layout.addWidget(QLabel("Render:"))
         self._controls = [
@@ -215,7 +206,6 @@ class ZStackObjectViewer(SaveableWidget):
             ['Volume', None, self._update_volume, []],
             ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
             ['Centroids', None, self._update_centroids, []],
-            ['Triangulation', None, self._update_triangulation, [self._tri_method, self._alpha_lvl]],
         ]
         def _register_control(i: int, name: str, update_fn: Callable, opts: List[QWidget]):
             self._settings_layout.addSpacing(5)
@@ -268,7 +258,6 @@ class ZStackObjectViewer(SaveableWidget):
         self._vol = None
         self._surface = None
         self._centroids = None
-        self._tri = None
         self._meshes = []
         self._rois = []
         self._is_proposing = False
@@ -416,20 +405,6 @@ class ZStackObjectViewer(SaveableWidget):
             item.setData(pos=self._centroids, color=(0, 1, 0, 1))
         return item
     
-    def _update_triangulation(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
-        assert not self._centroids is None
-        if self._tri_method.currentText() == 'advancing_front':
-            self._tri = Triangulation.surface_3d(self._centroids, method='advancing_front')
-        elif self._tri_method.currentText() == 'alpha_shape':
-            self._tri = Triangulation.surface_3d(self._centroids, method='alpha_shape', alpha=self._alpha_lvl.value())
-        else:
-            raise ValueError(f'Unknown triangulation method: {self._tri_method.currentText()}')
-        if item is None:
-            item = GLTriangulationItem(self._tri, color_mode='cc', only_watertight=False, **self.tri_opts)
-        else:
-            item.setData(self._tri, only_watertight=False)
-        return item
-
     def _render_rois(self, rois: List[List[LabeledROI]]):
         # Remove existing meshes
         for mesh in self._meshes:
