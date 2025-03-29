@@ -172,10 +172,14 @@ class SurfaceConstructorApp(SaveableApp):
         self._settings.addWidget(self._merge_btn)
         self._merge_btn.setEnabled(False)
         self._merge_btn.clicked.connect(self._merge_nodes)
-        self._delete_btn = QPushButton('Delete nodes')
-        self._settings.addWidget(self._delete_btn)
-        self._delete_btn.setEnabled(False)
-        self._delete_btn.clicked.connect(self._delete_nodes)
+        self._delete_nodes_btn = QPushButton('Delete nodes')
+        self._settings.addWidget(self._delete_nodes_btn)
+        self._delete_nodes_btn.setEnabled(False)
+        self._delete_nodes_btn.clicked.connect(self._delete_nodes)
+        self._delete_edge_btn = QPushButton('Delete edge')
+        self._settings.addWidget(self._delete_edge_btn)
+        self._delete_edge_btn.setEnabled(False)
+        self._delete_edge_btn.clicked.connect(self._delete_edge)
 
         self._settings.addStretch()
 
@@ -219,16 +223,22 @@ class SurfaceConstructorApp(SaveableApp):
     ''' Privates '''
 
     def _on_sel_change(self, sel: list):
-        print(f'Selection changed: {sel}')
         self._sel = sel
+        
         if len(sel) < 2:
             self._merge_btn.setEnabled(False)
         else:
             self._merge_btn.setEnabled(True)
-        if len(sel) in [1, 2]:
-            self._delete_btn.setEnabled(True)
+
+        if len(sel) == 2:
+            self._delete_edge_btn.setEnabled(True)
         else:
-            self._delete_btn.setEnabled(False)
+            self._delete_edge_btn.setEnabled(False)
+
+        if len(sel) >= 1:
+            self._delete_nodes_btn.setEnabled(True)
+        else:
+            self._delete_nodes_btn.setEnabled(False)
 
     def _merge_nodes(self):
         assert len(self._sel) >= 2, 'Need at least 2 points to merge'
@@ -239,11 +249,13 @@ class SurfaceConstructorApp(SaveableApp):
 
     def _delete_nodes(self):
         if len(self._sel) == 1:
-            tri = self._tri.remove_node(self._sel[0])
-        elif len(self._sel) == 2:
-            tri = self._tri.remove_edge(self._sel[0], self._sel[1])
-        else:
-            raise ValueError(f'Need exactly 1 or 2 points to delete, got {len(self._sel)}')
+            tri = self._tri.remove_nodes(self._sel)
+            self.copyIntoState(tri)
+            self.pushEdit()
+
+    def _delete_edge(self):
+        assert len(self._sel) == 2, 'Need exactly 2 points to delete edge'
+        tri = self._tri.remove_edge(self._sel[0], self._sel[1])
         self.copyIntoState(tri)
         self.pushEdit()
 
