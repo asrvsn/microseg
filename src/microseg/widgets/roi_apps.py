@@ -196,6 +196,8 @@ class ZStackObjectViewer(SaveableWidget):
         self._gl_widget.addItem(self._cursor_pt)
         
         # Create view mode controls
+        self._zmin_box = QSpinBox(minimum=0, maximum=self._zmax, value=0)
+        self._zmax_box = QSpinBox(minimum=0, maximum=self._zmax, value=self._zmax)
         self._mc_level = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
         self._mc_level.setSingleStep(0.01)
         self._wt_box = QCheckBox('Watertight only')
@@ -203,7 +205,7 @@ class ZStackObjectViewer(SaveableWidget):
         self._settings_layout.addWidget(QLabel("Render:"))
         self._controls = [
             ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
-            ['Volume', None, self._update_volume, []],
+            ['Volume', None, self._update_volume, [self._zmin_box, self._zmax_box]],
             ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
             ['Centroids', None, self._update_centroids, []],
         ]

@@ -224,7 +224,7 @@ class SurfaceConstructorApp(SaveableApp):
 
     def _on_sel_change(self, sel: list):
         self._sel = sel
-        
+
         if len(sel) < 2:
             self._merge_btn.setEnabled(False)
         else:
@@ -248,10 +248,11 @@ class SurfaceConstructorApp(SaveableApp):
         self._recompute_tri(push=True)  
 
     def _delete_nodes(self):
-        if len(self._sel) == 1:
-            tri = self._tri.remove_nodes(self._sel)
-            self.copyIntoState(tri)
-            self.pushEdit()
+        if len(self._sel) == 0:
+            print('No nodes to delete')
+        else:
+            self._pts = np.delete(self._pts, self._sel, axis=0)
+            self._recompute_tri(push=True)
 
     def _delete_edge(self):
         assert len(self._sel) == 2, 'Need exactly 2 points to delete edge'
