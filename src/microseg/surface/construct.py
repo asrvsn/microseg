@@ -180,6 +180,9 @@ class SurfaceConstructorApp(SaveableApp):
         self._settings.addWidget(self._delete_edge_btn)
         self._delete_edge_btn.setEnabled(False)
         self._delete_edge_btn.clicked.connect(self._delete_edge)
+        self._flip_btn = QPushButton('Flip normals')
+        self._settings.addWidget(self._flip_btn)
+        self._flip_btn.clicked.connect(self._flip_normals)
 
         self._settings.addStretch()
 
@@ -204,7 +207,27 @@ class SurfaceConstructorApp(SaveableApp):
         )
         self.setCentralWidget(self._main)
 
+        # Install event filter to capture key events
+        self._vw.installEventFilter(self)
+
     ''' Overrides '''
+
+    def eventFilter(self, obj, event):
+        if obj is self._vw and event.type() == event.KeyPress:
+            self.keyPressEvent(event)
+            return True
+        return super().eventFilter(obj, event)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        print(event.key())
+        if event.key() == Qt.Key_M:
+            self._merge_nodes()
+        elif event.key() == Qt.Key_D:
+            self._delete_nodes()
+        elif event.key() == Qt.Key_E:
+            self._delete_edge()
+        else:
+            super().keyPressEvent(event)
 
     def copyIntoState(self, tri: Triangulation):
         self._pts = tri.pts
@@ -241,11 +264,13 @@ class SurfaceConstructorApp(SaveableApp):
             self._delete_nodes_btn.setEnabled(False)
 
     def _merge_nodes(self):
-        assert len(self._sel) >= 2, 'Need at least 2 points to merge'
-        pts = np.delete(self._pts, self._sel, axis=0)
-        pt = self._pts[self._sel].mean(axis=0)
-        self._pts = np.vstack([pts, pt])
-        self._recompute_tri(push=True)  
+        if len(self._sel) >= 2:
+            pts = np.delete(self._pts, self._sel, axis=0)
+            pt = self._pts[self._sel].mean(axis=0)
+            self._pts = np.vstack([pts, pt])
+            self._recompute_tri(push=True)  
+        else:
+            print('Need at least 2 points to merge')
 
     def _delete_nodes(self):
         if len(self._sel) == 0:
@@ -255,15 +280,24 @@ class SurfaceConstructorApp(SaveableApp):
             self._recompute_tri(push=True)
 
     def _delete_edge(self):
-        assert len(self._sel) == 2, 'Need exactly 2 points to delete edge'
-        tri = self._tri.remove_edge(self._sel[0], self._sel[1])
-        self.copyIntoState(tri)
-        self.pushEdit()
+        if len(self._sel) == 2:
+            tri = self._tri.remove_edge(self._sel[0], self._sel[1])
+            self.copyIntoState(tri)
+            self.pushEdit()
+        else:
+            print('Need exactly 2 points to delete edge')
+
+    def _flip_normals(self):
+        if self._tri is not None:
+            self._tri.flip_orientation()
+            self.copyIntoState(self._tri)
 
     def _recompute_tri(self, push=True):
         method = self._method_cb.currentText()
         tri = Triangulation.surface_3d(self._pts, method=method)
         # tri.orient_outward(tri.pts.mean(axis=0))
+        if not self._tri is None:
+            tri.match_orientation(self._tri)
         self.copyIntoState(tri)
         if push:
             self.pushEdit()

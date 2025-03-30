@@ -10,6 +10,7 @@ import skimage.exposure
 import skimage.filters as skfilt
 import scipy
 import scipy.ndimage
+import pyclesperanto_prototype as cle
 
 from .base import *
 from .pg import *
@@ -161,15 +162,11 @@ class ZStackObjectViewer(SaveableWidget):
         'glOptions': 'translucent',
     }
     facecolors = cc_glasbey_01_rgba
-    thr_methods = {
-        'none': lambda x: x,
-        'otsu': lambda x: x > skfilt.threshold_otsu(x),
-        'li': lambda x: x > skfilt.threshold_li(x),
-        'yen': lambda x: x > skfilt.threshold_yen(x),
-        'isodata': lambda x: x > skfilt.threshold_isodata(x),
-        'triangle': lambda x: x > skfilt.threshold_triangle(x),
-        'minimum': lambda x: x > skfilt.threshold_minimum(x),
-    }
+    facecolors_rgb255 = cc_glasbey_255
+    surf_methods = [
+        'marching_cubes',
+        'voronoi_otsu',
+    ]
 
     def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, *args, **kwargs): 
         super().__init__(*args, **kwargs)
@@ -196,23 +193,38 @@ class ZStackObjectViewer(SaveableWidget):
         self._gl_widget.addItem(self._cursor_pt)
         
         # Create view mode controls
+        self._alpha_box = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
+        self._alpha_box.setSingleStep(0.05)
+        self._bd_box = QCheckBox('Apply boundary')
         self._zmin_box = QSpinBox(minimum=0, maximum=self._zmax, value=0)
         self._zmax_box = QSpinBox(minimum=0, maximum=self._zmax, value=self._zmax)
+        self._background_box = QCheckBox('Subtract background')
+        self._equalize_box = QCheckBox('Equalize')
         self._mc_level = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
         self._mc_level.setSingleStep(0.01)
+        self._spot_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=2.0)
+        self._spot_sigma.setSingleStep(0.1)
+        self._outline_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=2.0)
+        self._outline_sigma.setSingleStep(0.1)
         self._wt_box = QCheckBox('Watertight only')
+        self._centr_box = QComboBox()
+        self._centr_box.addItems(['mask', 'surface'])
 
         self._settings_layout.addWidget(QLabel("Render:"))
+        # These controls proceed in cascading fashion
         self._controls = [
-            ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
-            ['Volume', None, self._update_volume, [self._zmin_box, self._zmax_box]],
+            # ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
+            ['Volume', None, self._update_volume, [self._equalize_box, self._background_box, self._alpha_box, self._bd_box, self._zmin_box, self._zmax_box]],
             ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
-            ['Centroids', None, self._update_centroids, []],
+            ['Mask', None, self._update_mask, [self._spot_sigma, self._outline_sigma]],
+            ['Centroids', None, self._update_centroids, [self._centr_box]],
         ]
+        self._control_boxes = [None] * len(self._controls)
         def _register_control(i: int, name: str, update_fn: Callable, opts: List[QWidget]):
             self._settings_layout.addSpacing(5)
             box = QCheckBox(name)
             box.stateChanged.connect(lambda: self._toggle_control(i))
+            self._control_boxes[i] = box
             self._settings_layout.addWidget(box)
             self._settings_layout.addSpacing(5)
             for opt in opts:
@@ -231,25 +243,8 @@ class ZStackObjectViewer(SaveableWidget):
         for i, (name, _, update_fn, opts) in enumerate(self._controls):
             _register_control(i, name, update_fn, opts)
 
-        # Boundary
-        self._settings_layout.addSpacing(5)
-        self._bd_box = QCheckBox('Apply boundary')
-        self._bd_box.stateChanged.connect(lambda: self._update_processed_stack())
-        self._settings_layout.addWidget(self._bd_box)
-
-        # Rescale
-        self._settings_layout.addSpacing(5)
-        self._rescale_box = QCheckBox('Rescale by slice')
-        self._rescale_box.stateChanged.connect(lambda: self._update_processed_stack())
-        self._settings_layout.addWidget(self._rescale_box)
-
-        # Thresholding
-        self._settings_layout.addSpacing(5)
-        self._thr_box = QComboBox()
-        self._thr_box.addItems(self.thr_methods.keys())
-        self._thr_box.currentTextChanged.connect(lambda: self._update_processed_stack())
-        self._settings_layout.addWidget(QLabel('Threshold:'))
-        self._settings_layout.addWidget(self._thr_box)
+        self._centr_lbl = QLabel('Centroids: -')
+        self._settings_layout.addWidget(self._centr_lbl)
 
         # Initialize state
         self._active = [False] * len(self._controls)
@@ -258,6 +253,7 @@ class ZStackObjectViewer(SaveableWidget):
         self._stack = None
         self._boundary = None
         self._vol = None
+        self._mask = None
         self._surface = None
         self._centroids = None
         self._meshes = []
@@ -275,18 +271,18 @@ class ZStackObjectViewer(SaveableWidget):
         self._stack = img
         self._boundary = boundary
         self._bd_box.setEnabled(not (boundary is None))
-        self._update_processed_stack()
+        self._enable_control(0)
 
     def setROIs(self, rois: List[List[ROI]]):
         assert not self._is_proposing
         self._rois = rois
         self._render_rois(rois)
 
-    def setZ(self, z: int):
-        if z != self._z:
-            self._z = z
-            if self._active[0]:
-                self._update_view(0)
+    # def setZ(self, z: int):
+    #     if z != self._z:
+    #         self._z = z
+    #         if self._active[0]:
+    #             self._update_view(0)
 
     def setXY(self, xy: Tuple[int, int]):
         self._cursor_xy = xy
@@ -317,6 +313,12 @@ class ZStackObjectViewer(SaveableWidget):
 
     ''' Privates '''
 
+    def _enable_control(self, i: int):
+        if self._active[i]:
+            self._update_view(i)
+        else:
+            self._control_boxes[i].setChecked(True)
+
     def _toggle_control(self, i: int):
         assert not self._stack is None
         for opt in self._controls[i][3]:
@@ -334,23 +336,8 @@ class ZStackObjectViewer(SaveableWidget):
 
     def _update_view(self, i):
         self._controls[i][1] = self._controls[i][2](self._controls[i][1])
-
-    def _update_processed_stack(self):
-        data = self._stack[:, :, :, self._chan].copy() # ZXY
-
-        if self._bd_box.isChecked():
-            mask = ~self._boundary.to_mask(data.shape[1:]) # XY mask
-            data[:, mask] = 0 
-            # data[:] = 0
-
-        if self._rescale_box.isChecked():
-            for z in range(data.shape[0]):
-                data[z] = skimage.exposure.rescale_intensity(data[z])
-
-        data = self.thr_methods[self._thr_box.currentText()](data)
-        self._vol = data
-        print(f'Processed stack')
-        self._update_view(1) # Update volume
+        if i < len(self._controls) - 1 and self._active[i+1]:
+            self._update_view(i+1) # Cascade to next control
 
     def _update_slice(self, item: Optional[gl.GLImageItem]) -> gl.GLImageItem:
         print(f'updating slice to {self._z}')
@@ -371,22 +358,63 @@ class ZStackObjectViewer(SaveableWidget):
         return item
     
     def _update_volume(self, item: Optional[GLZStackItem]) -> GLZStackItem:
+        data = self._stack[:, :, :, self._chan].copy().astype(np.float32) # ZXY
+
+        # Intensity equalization
+        if self._equalize_box.isChecked():
+            mu = data.mean()
+            for z in range(data.shape[0]):
+                data[z] *= data[z].mean() / mu
+
+        # Background subtraction
+        if self._background_box.isChecked():
+            data = cle.top_hat_box(data, radius_x=5, radius_y=5, radius_z=5).get()
+
+        # Boundary
+        if self._bd_box.isChecked():
+            mask = ~self._boundary.to_mask(data.shape[1:]) # XY mask
+            data[:, mask] = 0 
+
+        # Z-slice selection
+        zmin, zmax = self._zmin_box.value(), self._zmax_box.value()
+        data = data[zmin:zmax]
+
+        self._vol = data
+        print(f'Processed stack')
+
+        alpha = self._alpha_box.value()
+
         if item is None:
-            item = GLZStackItem(self._vol, xyz_scale=(1, 1, self._z_aniso))
+            item = GLZStackItem(self._vol, xyz_scale=(1, 1, self._z_aniso), alpha=alpha)
             # print(f'Z anisotropy: {self._z_aniso}')
             # item = GLZStackItem(self._vol)
         else:
-            item.setData(self._vol)
+            item.setData(self._vol, alpha=alpha)
+        return item
+    
+    def _update_mask(self, item: Optional[GLZStackItem]) -> GLZStackItem:
+        assert not self._vol is None
+        vol = self._vol.transpose(2, 1, 0) # ZXY -> XYZ
+        mask = cle.voronoi_otsu_labeling(
+            vol, 
+            spot_sigma=self._spot_sigma.value(), 
+            outline_sigma=self._outline_sigma.value(),
+        ).get() # Convert to numpy array
+        self._mask = mask
+        image = self.facecolors_rgb255[mask % len(self.facecolors_rgb255)]
+        image[mask == 0] = (0, 0, 0)
+        if item is None:
+            item = GLZStackItem(image, xyz_scale=(1, 1, self._z_aniso), alpha=0.1)
+        else:
+            item.setData(image)
         return item
 
     def _update_surface(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
-        print(f'update_surface called with item {item}')
         vol = self._vol.transpose(2, 1, 0) # ZXY -> XYZ
         level = self._mc_level.value() * (vol.max() - vol.min()) + vol.min()
         self._surface = Triangulation.from_volume(
             vol,
             method='marching_cubes',
-            # spacing=(1, 1, self._z_aniso),
             level=level,
         )
         self._surface.pts[:, 2] *= self._z_aniso # Scale after segmentation
@@ -398,13 +426,24 @@ class ZStackObjectViewer(SaveableWidget):
         return item
     
     def _update_centroids(self, item: Optional[gl.GLScatterPlotItem]) -> gl.GLScatterPlotItem:
-        assert not self._surface is None
-        ccs = self._surface.get_connected_components()
-        self._centroids = np.array([cc.get_centroid() for cc in ccs])
+        method = self._centr_box.currentText()
+        if method == 'mask':
+            assert not self._mask is None
+            self._centroids = np.array(scipy.ndimage.center_of_mass(
+                np.ones_like(self._mask), labels=self._mask, index=np.arange(1, self._mask.max()+1)
+            ))
+            self._centroids[:, 2] *= self._z_aniso
+        elif method == 'surface':
+            assert not self._surface is None
+            ccs = self._surface.get_connected_components()
+            self._centroids = np.array([cc.get_centroid() for cc in ccs])
+        else:
+            raise ValueError(f'Unknown centroid method: {method}')
         if item is None:
             item = gl.GLScatterPlotItem(pos=self._centroids, color=(0, 1, 0, 1))
         else:
             item.setData(pos=self._centroids, color=(0, 1, 0, 1))
+        self._centr_lbl.setText(f'Centroids: {self._centroids.shape[0]}')
         return item
     
     def _render_rois(self, rois: List[List[LabeledROI]]):

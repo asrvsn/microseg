@@ -79,19 +79,21 @@ class GLPlaneItem(gl.GLMeshItem):
         self.translate(0, 0, z_new)  
 
 class GLZStackItem(gl.GLVolumeItem):
-    def __init__(self, z_stack: np.ndarray, *args, xyz_scale: Tuple[float, float, float]=(1, 1, 1), glOptions='additive', **kwargs):
+    def __init__(self, z_stack: np.ndarray, *args, xyz_scale: Tuple[float, float, float]=(1, 1, 1), glOptions='additive', alpha=0.5, **kwargs):
         '''
         Z-stack is ZXY format
         '''
         self._z_stack = z_stack
         self._xyz_scale = xyz_scale
+        self._alpha = alpha
         super().__init__(*args, z_stack, glOptions=glOptions, **kwargs)
 
-    def setData(self, z_stack: np.ndarray):
+    def setData(self, z_stack: np.ndarray, alpha=0.5):
         '''
         Z-stack is ZXY format
         '''
         self._z_stack = z_stack
+        self._alpha = alpha
         data = self._process_stack()
         super().setData(data)
         self.resetTransform()
@@ -99,20 +101,36 @@ class GLZStackItem(gl.GLVolumeItem):
             self.scale(*self._xyz_scale)
 
     def _process_stack(self) -> np.ndarray:
-        # Prepare volume data (x,y,z,RGBA)
-        vol = self._z_stack.transpose(2, 1, 0)  
-        vol = vol.astype(np.float32)
-        vol = (vol - vol.min()) / (vol.max() - vol.min())  # Normalize to [0,1]
-        
-        # Create alpha channel - transparent where intensity is 0, otherwise proportional to intensity
-        alpha = vol.copy()
-        # Optional: Set a minimum threshold to remove noise
-        alpha[vol < 0.01] = 0  # Black regions (near zero) become fully transparent
-        
-        # Create final RGBA volume - maintain original intensities for RGB channels
-        vol_rgba = np.stack([vol] * 3 + [alpha], axis=-1)
-        vol_rgba = (vol_rgba * 255).astype(np.ubyte)
-        return vol_rgba
+        if self._z_stack.ndim == 3:
+            # Intensity data only provided
+            # Prepare volume data (x,y,z,RGBA)
+            vol = self._z_stack.transpose(2, 1, 0)  
+            vol = vol.astype(np.float32)
+            vol = (vol - vol.min()) / (vol.max() - vol.min())  # Normalize to [0,1]
+            
+            # # Create alpha channel - transparent where intensity is 0, otherwise proportional to intensity
+            # alpha = vol.copy() * self._alpha
+            # # Optional: Set a minimum threshold to remove noise
+            # alpha[vol < 0.01] = 0  # Black regions (near zero) become fully transparent
+            alpha = np.full_like(vol, self._alpha)
+            alpha[vol < 0.01] = 0
+            
+            # Create final RGBA volume - maintain original intensities for RGB channels
+            vol_rgba = np.stack([vol] * 3 + [alpha], axis=-1)
+            vol_rgba = (vol_rgba * 255).astype(np.ubyte)
+            return vol_rgba
+        else:
+            # RGB already provided
+            assert self._z_stack.ndim == 4 
+            assert self._z_stack.shape[3] in [3, 4]
+            if self._z_stack.shape[3] == 3:
+                alpha = np.full_like(self._z_stack[..., 0], int(255 * self._alpha))
+                alpha[self._z_stack[..., 0] == 0] = 0
+                vol_rgba = np.concatenate([self._z_stack, alpha[..., None]], axis=-1)
+            else:
+                vol_rgba = self._z_stack
+            vol_rgba = vol_rgba.astype(np.ubyte)
+            return vol_rgba
     
 class GLTriangulationItem(gl.GLMeshItem):
     FACE_COLORS = cc_glasbey_01_rgba
