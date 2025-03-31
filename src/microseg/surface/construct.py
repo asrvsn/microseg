@@ -142,6 +142,11 @@ class SurfaceConstructorApp(SaveableApp):
     tri_methods = [
         'advancing_front',
     ]
+    subdiv_methods = [
+        'modified_butterfly',
+        'catmull_clark',
+        'loop',
+    ]
 
     def __init__(self, pts_path: str, *args, **kwargs):
         # State
@@ -183,6 +188,18 @@ class SurfaceConstructorApp(SaveableApp):
         self._flip_btn = QPushButton('Flip normals')
         self._settings.addWidget(self._flip_btn)
         self._flip_btn.clicked.connect(self._flip_normals)
+        self._settings.addWidget(QLabel('Rescale:'))
+        self._rescale_sb = QDoubleSpinBox(minimum=0.0, value=1.0)
+        self._settings.addWidget(self._rescale_sb)
+        self._rescale_sb.valueChanged.connect(self._rescale)
+        self._settings.addWidget(QLabel('Subdivide:'))
+        self._subdiv_cb = QComboBox()
+        self._subdiv_cb.addItems(self.subdiv_methods)
+        self._settings.addWidget(self._subdiv_cb)
+        self._subdiv_cb.currentIndexChanged.connect(self._subdivide)
+        self._subdiv_n = QSpinBox(minimum=0, maximum=10, value=0)
+        self._settings.addWidget(self._subdiv_n)
+        self._subdiv_n.valueChanged.connect(self._subdivide)
 
         self._settings.addStretch()
 
@@ -291,6 +308,19 @@ class SurfaceConstructorApp(SaveableApp):
         if self._tri is not None:
             self._tri.flip_orientation()
             self.copyIntoState(self._tri)
+
+    def _rescale(self):
+        scale = self._rescale_sb.value()
+        tri = self._tri.rescale(scale)
+        self.copyIntoState(tri)
+        self.pushEdit()
+
+    def _subdivide(self):
+        method = self._subdiv_cb.currentText()
+        n = self._subdiv_n.value()
+        tri = self._tri.subdivide(n, mode=method)
+        self.copyIntoState(tri)
+        self.pushEdit()
 
     def _recompute_tri(self, push=True):
         method = self._method_cb.currentText()

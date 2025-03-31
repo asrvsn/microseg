@@ -144,7 +144,7 @@ class GLZStackItem(gl.GLVolumeItem):
             vol_rgba = skimage.measure.block_reduce(vol_rgba, tuple(ds), np.max)
             self._xyz_scale = self._xyz_voxel_size * ds[:3]
             
-        print(f'Volume size: {vol_rgba.shape}')
+        # print(f'Volume size: {vol_rgba.shape}')
 
         return vol_rgba
 

@@ -11,6 +11,8 @@ import skimage.filters as skfilt
 import scipy
 import scipy.ndimage
 import pyclesperanto_prototype as cle
+import skimage
+import skimage.morphology
 
 from .base import *
 from .pg import *
@@ -195,19 +197,23 @@ class ZStackObjectViewer(SaveableWidget):
         # Create view mode controls
         self._chan_box = QComboBox()
         self._chan_box.addItems([f'{i}' for i in range(nchans)])
-        self._alpha_box = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
+        self._alpha_box = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.3)
         self._alpha_box.setSingleStep(0.05)
         self._bd_box = QCheckBox('Apply boundary')
+        self._bd_box.setChecked(True)
         self._zmin_box = QSpinBox(minimum=0, maximum=self._zmax, value=0)
         self._zmax_box = QSpinBox(minimum=0, maximum=self._zmax, value=self._zmax)
         self._background_box = QCheckBox('Subtract background')
+        self._background_box.setChecked(True)
         self._equalize_box = QCheckBox('Equalize')
+        self._equalize_box.setChecked(True)
         self._mc_level = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
         self._mc_level.setSingleStep(0.01)
         self._spot_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=2.0)
         self._spot_sigma.setSingleStep(0.1)
         self._outline_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=2.0)
         self._outline_sigma.setSingleStep(0.1)
+        self._hull_box = QCheckBox('Hull')
         self._wt_box = QCheckBox('Watertight only')
         self._centr_box = QComboBox()
         self._centr_box.addItems(['mask', 'surface'])
@@ -218,7 +224,7 @@ class ZStackObjectViewer(SaveableWidget):
             # ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
             ['Volume', None, self._update_volume, [self._chan_box, self._equalize_box, self._background_box, self._alpha_box, self._bd_box, self._zmin_box, self._zmax_box]],
             ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
-            ['Mask', None, self._update_mask, [self._spot_sigma, self._outline_sigma]],
+            ['Mask', None, self._update_mask, [self._spot_sigma, self._outline_sigma, self._hull_box]],
             ['Centroids', None, self._update_centroids, [self._centr_box]],
         ]
         self._control_boxes = [None] * len(self._controls)
@@ -404,7 +410,10 @@ class ZStackObjectViewer(SaveableWidget):
             spot_sigma=self._spot_sigma.value(), 
             outline_sigma=self._outline_sigma.value(),
         ).get() # Convert to numpy array
-        self._mask = mask
+        self._mask = mask.copy()
+        if self._hull_box.isChecked():
+            for z in range(mask.shape[0]):
+                mask[z] = skimage.morphology.convex_hull_image(mask[z])
         image = self.facecolors_rgb255[mask % len(self.facecolors_rgb255)]
         image[mask == 0] = (0, 0, 0)
         if item is None:
