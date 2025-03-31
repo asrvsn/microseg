@@ -8,6 +8,9 @@ from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QSizePolicy, QShortcut
 from qtpy.QtGui import QKeySequence
 import pyqtgraph.opengl as gl
+import skimage
+import skimage.measure
+import math
 
 from matgeo import Triangulation
 from .base import MainWindow
@@ -79,12 +82,15 @@ class GLPlaneItem(gl.GLMeshItem):
         self.translate(0, 0, z_new)  
 
 class GLZStackItem(gl.GLVolumeItem):
-    def __init__(self, z_stack: np.ndarray, *args, xyz_scale: Tuple[float, float, float]=(1, 1, 1), glOptions='additive', alpha=0.5, **kwargs):
+    MAX_TEXTURE_SIZE = 2048
+    
+    def __init__(self, z_stack: np.ndarray, *args, xyz_voxel_size: Tuple[float, float, float]=(1, 1, 1), glOptions='additive', alpha=0.5, **kwargs):
         '''
         Z-stack is ZXY format
         '''
         self._z_stack = z_stack
-        self._xyz_scale = xyz_scale
+        self._xyz_voxel_size = np.array(xyz_voxel_size)
+        self._xyz_scale = self._xyz_voxel_size
         self._alpha = alpha
         super().__init__(*args, z_stack, glOptions=glOptions, **kwargs)
 
@@ -97,7 +103,7 @@ class GLZStackItem(gl.GLVolumeItem):
         data = self._process_stack()
         super().setData(data)
         self.resetTransform()
-        if self._xyz_scale != (1, 1, 1):
+        if not np.allclose(self._xyz_scale, (1, 1, 1)):
             self.scale(*self._xyz_scale)
 
     def _process_stack(self) -> np.ndarray:
@@ -118,7 +124,6 @@ class GLZStackItem(gl.GLVolumeItem):
             # Create final RGBA volume - maintain original intensities for RGB channels
             vol_rgba = np.stack([vol] * 3 + [alpha], axis=-1)
             vol_rgba = (vol_rgba * 255).astype(np.ubyte)
-            return vol_rgba
         else:
             # RGB already provided
             assert self._z_stack.ndim == 4 
@@ -130,7 +135,19 @@ class GLZStackItem(gl.GLVolumeItem):
             else:
                 vol_rgba = self._z_stack
             vol_rgba = vol_rgba.astype(np.ubyte)
-            return vol_rgba
+
+        # Downscale to fit within OpenGL texture size limitations as needed 
+        if max(vol_rgba.shape[:2]) > self.MAX_TEXTURE_SIZE:
+            ds_x = math.ceil(vol_rgba.shape[0] / self.MAX_TEXTURE_SIZE)
+            ds_y = math.ceil(vol_rgba.shape[1] / self.MAX_TEXTURE_SIZE)
+            ds = np.array([ds_x, ds_y] + [1] * (vol_rgba.ndim - 2))
+            vol_rgba = skimage.measure.block_reduce(vol_rgba, tuple(ds), np.max)
+            self._xyz_scale = self._xyz_voxel_size * ds[:3]
+            
+        print(f'Volume size: {vol_rgba.shape}')
+
+        return vol_rgba
+
     
 class GLTriangulationItem(gl.GLMeshItem):
     FACE_COLORS = cc_glasbey_01_rgba

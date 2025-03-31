@@ -168,7 +168,7 @@ class ZStackObjectViewer(SaveableWidget):
         'voronoi_otsu',
     ]
 
-    def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, *args, **kwargs): 
+    def __init__(self, imgsize: np.ndarray, voxsize: np.ndarray, nchans: int, *args, **kwargs): 
         super().__init__(*args, **kwargs)
         self._imgsize = imgsize # XYZ
         self._zmax = imgsize[2]
@@ -193,6 +193,8 @@ class ZStackObjectViewer(SaveableWidget):
         self._gl_widget.addItem(self._cursor_pt)
         
         # Create view mode controls
+        self._chan_box = QComboBox()
+        self._chan_box.addItems([f'{i}' for i in range(nchans)])
         self._alpha_box = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
         self._alpha_box.setSingleStep(0.05)
         self._bd_box = QCheckBox('Apply boundary')
@@ -214,7 +216,7 @@ class ZStackObjectViewer(SaveableWidget):
         # These controls proceed in cascading fashion
         self._controls = [
             # ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
-            ['Volume', None, self._update_volume, [self._equalize_box, self._background_box, self._alpha_box, self._bd_box, self._zmin_box, self._zmax_box]],
+            ['Volume', None, self._update_volume, [self._chan_box, self._equalize_box, self._background_box, self._alpha_box, self._bd_box, self._zmin_box, self._zmax_box]],
             ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
             ['Mask', None, self._update_mask, [self._spot_sigma, self._outline_sigma]],
             ['Centroids', None, self._update_centroids, [self._centr_box]],
@@ -237,6 +239,8 @@ class ZStackObjectViewer(SaveableWidget):
                     opt.valueChanged.connect(lambda _: self._update_view(i))
                 elif hasattr(opt, 'currentTextChanged'):
                     opt.currentTextChanged.connect(lambda _: self._update_view(i))
+                elif hasattr(opt, 'currentIndexChanged'):
+                    opt.currentIndexChanged.connect(lambda _: self._update_view(i))
                 else:
                     raise ValueError(f'Unknown option type: {type(opt)}')
 
@@ -358,6 +362,7 @@ class ZStackObjectViewer(SaveableWidget):
         return item
     
     def _update_volume(self, item: Optional[GLZStackItem]) -> GLZStackItem:
+        self._chan = int(self._chan_box.currentText())
         data = self._stack[:, :, :, self._chan].copy().astype(np.float32) # ZXY
 
         # Intensity equalization
@@ -383,9 +388,8 @@ class ZStackObjectViewer(SaveableWidget):
         print(f'Processed stack')
 
         alpha = self._alpha_box.value()
-
         if item is None:
-            item = GLZStackItem(self._vol, xyz_scale=(1, 1, self._z_aniso), alpha=alpha)
+            item = GLZStackItem(self._vol, xyz_voxel_size=(1, 1, self._z_aniso), alpha=alpha)
             # print(f'Z anisotropy: {self._z_aniso}')
             # item = GLZStackItem(self._vol)
         else:
@@ -404,7 +408,7 @@ class ZStackObjectViewer(SaveableWidget):
         image = self.facecolors_rgb255[mask % len(self.facecolors_rgb255)]
         image[mask == 0] = (0, 0, 0)
         if item is None:
-            item = GLZStackItem(image, xyz_scale=(1, 1, self._z_aniso), alpha=0.1)
+            item = GLZStackItem(image, xyz_voxel_size=(1, 1, self._z_aniso), alpha=0.1)
         else:
             item.setData(image)
         return item
@@ -558,7 +562,7 @@ class VolumeSegmentorApp(SaveableApp):
 
         # Widgets
         self._main = VLayoutWidget()
-        self._viewer = ZStackObjectViewer(imgsize, self._voxsize)
+        self._viewer = ZStackObjectViewer(imgsize, self._voxsize, self._img.shape[3])
         self._viewer.setStack(self._img, self._boundary)
         self._main.addWidget(self._viewer)
         super().__init__(
