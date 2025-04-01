@@ -141,6 +141,7 @@ class Register3DWindow(MainWindow):
 class SurfaceConstructorApp(SaveableApp):
     tri_methods = [
         'advancing_front',
+        'chull',
     ]
     subdiv_methods = [
         'modified_butterfly',
@@ -163,10 +164,10 @@ class SurfaceConstructorApp(SaveableApp):
         self._settings = HLayoutWidget()
         self._main.addWidget(self._settings)
 
-        # center = self._pts.mean(axis=0)
+        center = self._pts.mean(axis=0)
         # self._vw.opts['center'] = pg.Vector(*center)
-        # viewsize = np.linalg.norm(self._pts - center, axis=1).max()
-        # self._vw.setCameraPosition(distance=1.3 * viewsize)
+        viewsize = np.linalg.norm(self._pts - center, axis=1).max()
+        self._vw.setCameraPosition(distance=1.3 * viewsize)
 
         self._settings.addWidget(QLabel('Method:'))
         self._method_cb = QComboBox()
@@ -188,18 +189,18 @@ class SurfaceConstructorApp(SaveableApp):
         self._flip_btn = QPushButton('Flip normals')
         self._settings.addWidget(self._flip_btn)
         self._flip_btn.clicked.connect(self._flip_normals)
-        self._settings.addWidget(QLabel('Rescale:'))
-        self._rescale_sb = QDoubleSpinBox(minimum=0.0, value=1.0)
-        self._settings.addWidget(self._rescale_sb)
-        self._rescale_sb.valueChanged.connect(self._rescale)
-        self._settings.addWidget(QLabel('Subdivide:'))
-        self._subdiv_cb = QComboBox()
-        self._subdiv_cb.addItems(self.subdiv_methods)
-        self._settings.addWidget(self._subdiv_cb)
-        self._subdiv_cb.currentIndexChanged.connect(self._subdivide)
-        self._subdiv_n = QSpinBox(minimum=0, maximum=10, value=0)
-        self._settings.addWidget(self._subdiv_n)
-        self._subdiv_n.valueChanged.connect(self._subdivide)
+        # self._settings.addWidget(QLabel('Rescale:'))
+        # self._rescale_sb = QDoubleSpinBox(minimum=0.0, value=1.0)
+        # self._settings.addWidget(self._rescale_sb)
+        # self._rescale_sb.valueChanged.connect(self._rescale)
+        # self._settings.addWidget(QLabel('Subdivide:'))
+        # self._subdiv_cb = QComboBox()
+        # self._subdiv_cb.addItems(self.subdiv_methods)
+        # self._settings.addWidget(self._subdiv_cb)
+        # self._subdiv_cb.currentIndexChanged.connect(self._subdivide)
+        # self._subdiv_n = QSpinBox(minimum=0, maximum=10, value=0)
+        # self._settings.addWidget(self._subdiv_n)
+        # self._subdiv_n.valueChanged.connect(self._subdivide)
 
         self._settings.addStretch()
 

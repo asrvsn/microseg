@@ -4,7 +4,7 @@ Base classes for building apps from ROI editors
 from typing import Dict, Optional
 import pyqtgraph.opengl as gl # Has to be imported before qtpy
 from matgeo import Triangulation
-from scipy.spatial import cKDTree
+from scipy.spatial import cKDTree, ConvexHull
 import skimage
 import skimage.exposure
 import skimage.filters as skfilt
@@ -200,7 +200,6 @@ class ZStackObjectViewer(SaveableWidget):
         self._alpha_box = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.3)
         self._alpha_box.setSingleStep(0.05)
         self._bd_box = QCheckBox('Apply boundary')
-        self._bd_box.setChecked(True)
         self._zmin_box = QSpinBox(minimum=0, maximum=self._zmax, value=0)
         self._zmax_box = QSpinBox(minimum=0, maximum=self._zmax, value=self._zmax)
         self._background_box = QCheckBox('Subtract background')
@@ -215,8 +214,8 @@ class ZStackObjectViewer(SaveableWidget):
         self._outline_sigma.setSingleStep(0.1)
         self._hull_box = QCheckBox('Hull')
         self._wt_box = QCheckBox('Watertight only')
-        self._centr_box = QComboBox()
-        self._centr_box.addItems(['mask', 'surface'])
+        self._verts_box = QComboBox()
+        self._verts_box.addItems(['mask', 'mask_hull', 'surface'])
 
         self._settings_layout.addWidget(QLabel("Render:"))
         # These controls proceed in cascading fashion
@@ -225,7 +224,7 @@ class ZStackObjectViewer(SaveableWidget):
             ['Volume', None, self._update_volume, [self._chan_box, self._equalize_box, self._background_box, self._alpha_box, self._bd_box, self._zmin_box, self._zmax_box]],
             ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
             ['Mask', None, self._update_mask, [self._spot_sigma, self._outline_sigma, self._hull_box]],
-            ['Centroids', None, self._update_centroids, [self._centr_box]],
+            ['Vertices', None, self._update_vertices, [self._verts_box]],
         ]
         self._control_boxes = [None] * len(self._controls)
         def _register_control(i: int, name: str, update_fn: Callable, opts: List[QWidget]):
@@ -253,8 +252,8 @@ class ZStackObjectViewer(SaveableWidget):
         for i, (name, _, update_fn, opts) in enumerate(self._controls):
             _register_control(i, name, update_fn, opts)
 
-        self._centr_lbl = QLabel('Centroids: -')
-        self._settings_layout.addWidget(self._centr_lbl)
+        self._verts_lbl = QLabel('Vertices: -')
+        self._settings_layout.addWidget(self._verts_lbl)
 
         # Initialize state
         self._active = [False] * len(self._controls)
@@ -265,7 +264,7 @@ class ZStackObjectViewer(SaveableWidget):
         self._vol = None
         self._mask = None
         self._surface = None
-        self._centroids = None
+        self._vertices = None
         self._meshes = []
         self._rois = []
         self._is_proposing = False
@@ -280,6 +279,10 @@ class ZStackObjectViewer(SaveableWidget):
             self._controls[i][1] = None # Reset state
         self._stack = img
         self._boundary = boundary
+        if not boundary is None:
+            self._bd_box.blockSignals(True)
+            self._bd_box.setChecked(True)
+            self._bd_box.blockSignals(False)
         self._bd_box.setEnabled(not (boundary is None))
         self._enable_control(0)
 
@@ -368,6 +371,7 @@ class ZStackObjectViewer(SaveableWidget):
         return item
     
     def _update_volume(self, item: Optional[GLZStackItem]) -> GLZStackItem:
+        print(f'Updating volume')
         self._chan = int(self._chan_box.currentText())
         data = self._stack[:, :, :, self._chan].copy().astype(np.float32) # ZXY
 
@@ -395,9 +399,7 @@ class ZStackObjectViewer(SaveableWidget):
 
         alpha = self._alpha_box.value()
         if item is None:
-            item = GLZStackItem(self._vol, xyz_voxel_size=(1, 1, self._z_aniso), alpha=alpha)
-            # print(f'Z anisotropy: {self._z_aniso}')
-            # item = GLZStackItem(self._vol)
+            item = GLZStackItem(self._vol, xyz_voxel_size=tuple(self._voxsize), alpha=alpha)
         else:
             item.setData(self._vol, alpha=alpha)
         return item
@@ -410,14 +412,11 @@ class ZStackObjectViewer(SaveableWidget):
             spot_sigma=self._spot_sigma.value(), 
             outline_sigma=self._outline_sigma.value(),
         ).get() # Convert to numpy array
-        self._mask = mask.copy()
-        if self._hull_box.isChecked():
-            for z in range(mask.shape[0]):
-                mask[z] = skimage.morphology.convex_hull_image(mask[z])
+        self._mask = mask
         image = self.facecolors_rgb255[mask % len(self.facecolors_rgb255)]
         image[mask == 0] = (0, 0, 0)
         if item is None:
-            item = GLZStackItem(image, xyz_voxel_size=(1, 1, self._z_aniso), alpha=0.1)
+            item = GLZStackItem(image, xyz_voxel_size=tuple(self._voxsize), alpha=0.1)
         else:
             item.setData(image)
         return item
@@ -430,7 +429,7 @@ class ZStackObjectViewer(SaveableWidget):
             method='marching_cubes',
             level=level,
         )
-        self._surface.pts[:, 2] *= self._z_aniso # Scale after segmentation
+        self._surface.pts *= self._voxsize
         wt = self._wt_box.isChecked()
         if item is None:
             item = GLTriangulationItem(self._surface, color_mode='cc', only_watertight=wt)
@@ -438,25 +437,31 @@ class ZStackObjectViewer(SaveableWidget):
             item.setData(self._surface, only_watertight=wt)
         return item
     
-    def _update_centroids(self, item: Optional[gl.GLScatterPlotItem]) -> gl.GLScatterPlotItem:
-        method = self._centr_box.currentText()
+    def _update_vertices(self, item: Optional[gl.GLScatterPlotItem]) -> gl.GLScatterPlotItem:
+        method = self._verts_box.currentText()
         if method == 'mask':
             assert not self._mask is None
-            self._centroids = np.array(scipy.ndimage.center_of_mass(
+            self._vertices = np.array(scipy.ndimage.center_of_mass(
                 np.ones_like(self._mask), labels=self._mask, index=np.arange(1, self._mask.max()+1)
             ))
-            self._centroids[:, 2] *= self._z_aniso
+            self._vertices *= self._voxsize
+        elif method == 'mask_hull':
+            assert not self._mask is None
+            coords = np.argwhere(self._mask > 0).astype(np.float32)
+            coords *= self._voxsize
+            hull = ConvexHull(coords)
+            self._vertices = coords[hull.vertices]
         elif method == 'surface':
             assert not self._surface is None
             ccs = self._surface.get_connected_components()
-            self._centroids = np.array([cc.get_centroid() for cc in ccs])
+            self._vertices = np.array([cc.get_centroid() for cc in ccs])
         else:
             raise ValueError(f'Unknown centroid method: {method}')
         if item is None:
-            item = gl.GLScatterPlotItem(pos=self._centroids, color=(0, 1, 0, 1))
+            item = gl.GLScatterPlotItem(pos=self._vertices, color=(0, 1, 0, 1))
         else:
-            item.setData(pos=self._centroids, color=(0, 1, 0, 1))
-        self._centr_lbl.setText(f'Centroids: {self._centroids.shape[0]}')
+            item.setData(pos=self._vertices, color=(0, 1, 0, 1))
+        self._verts_lbl.setText(f'Vertices: {self._vertices.shape[0]}')
         return item
     
     def _render_rois(self, rois: List[List[LabeledROI]]):
