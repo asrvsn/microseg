@@ -172,7 +172,7 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         self.reset_state()
 
         # Listeners
-        self._roi_creator.processed.connect(self.propose.emit) # Bubble from the editor
+        self._roi_creator.processed.connect(self.on_rois_created) # Bubble from the editor
         self._ok_btn.clicked.connect(self._ok)
         self._cancel_btn.clicked.connect(self._cancel)
         
@@ -253,6 +253,9 @@ class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
         '''
         self._proposed_polys = polys
         self._roi_creator.setPolys(polys) # propose() event will bubble through ROI editor
+
+    def on_rois_created(self, rois: List[ROI]):
+        self.propose.emit(rois)
 
     ''' Private methods '''
 

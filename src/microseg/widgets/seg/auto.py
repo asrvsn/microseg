@@ -47,6 +47,8 @@ class ImageProcessingWidget(VLayoutWidget):
         self._subimg_size.setSingleStep(0.1)
         row_wdg.addWidget(self._subimg_size)
         self.addWidget(row_wdg)
+        self._polys_box = QCheckBox('Show polygon')
+        self.addWidget(self._polys_box)
         ## Intensity
         self._intens_box = QCheckBox('Rescale intensity')
         self.addWidget(self._intens_box)
@@ -69,6 +71,7 @@ class ImageProcessingWidget(VLayoutWidget):
     
         # State
         self._img = None
+        self._poly = None
         self._processed_img = None
         self._poly_transform = lambda p: p
         self._poly_transform_inv = lambda p: p
@@ -77,10 +80,13 @@ class ImageProcessingWidget(VLayoutWidget):
         self._intens_box.setChecked(False)
         self._filt_btns[0].setChecked(True)
         self._subimg_box.setChecked(False)
+        self._polys_box.setChecked(False)
+        self._polys_box.setEnabled(False)
 
         # Listeners
         self._subimg_box.toggled.connect(self._recalculate)
         self._subimg_size.valueChanged.connect(self._recalculate)
+        self._polys_box.toggled.connect(self._redraw_img)
         for btn in [self._down_box, self._intens_box]:
             btn.toggled.connect(self._recalculate)
         self._filt_btn_grp.buttonClicked.connect(self._recalculate)
@@ -104,10 +110,6 @@ class ImageProcessingWidget(VLayoutWidget):
             # Update offset & img
             offset = np.array([xmin, ymin])
             img = img[ymin:ymax, xmin:xmax].copy()
-            # Show image
-            self._subimg_view.show()
-            self._subimg_view.setFixedSize(220, round(220 * img.shape[0] / img.shape[1]))
-            self._subimg_view.setImage(img)
         #     def _render_img(self, poly: PlanarPolygon):
         # subimg = self._img_proc.processed_img.copy()
         # scale = self._img_proc.scale
@@ -118,8 +120,6 @@ class ImageProcessingWidget(VLayoutWidget):
         # if self._drawing_box.isChecked():
         #     subimg = mutil.draw_outline(subimg, (poly - offset).set_res(scale, scale))
         # self._subimg_view.setImage(subimg)  
-        else:
-            self._subimg_view.hide()
         ## Intensity
         if self._intens_box.isChecked():
             img = rescale_intensity(img)
@@ -142,8 +142,26 @@ class ImageProcessingWidget(VLayoutWidget):
         self._poly_transform_inv = lambda p: p.rescale(1/voxsize) + offset
         ## Set image
         self._processed_img = img
+        self._redraw_img()
         print('Image processed')
         self.processed.emit()
+
+    def _redraw_img(self):
+        img = self._processed_img
+        ## Show image
+        if self._subimg_box.isChecked():
+            self._polys_box.setEnabled(True)
+            self._subimg_view.show()
+            self._subimg_view.setFixedSize(220, round(220 * img.shape[0] / img.shape[1]))
+            if self._polys_box.isChecked():
+                assert not self._poly is None
+                poly = self._poly_transform(self._poly)
+                print(f'Drawing polygon with area {poly.area()}')
+                img = poly.draw_outline(img, label=img.max())
+            self._subimg_view.setImage(img)
+        else:
+            self._subimg_view.hide()
+            self._polys_box.setEnabled(False)
 
     ''' Public '''
     
@@ -163,6 +181,10 @@ class ImageProcessingWidget(VLayoutWidget):
         self._img = img
         self._poly = poly
         self._recalculate()
+
+    def setPoly(self, poly: PlanarPolygon):
+        self._poly = poly
+        self._redraw_img()
 
 class MaskProcessingWidget(VLayoutWidget):
     processed = QtCore.Signal()
@@ -269,7 +291,7 @@ class PolySelectionWidget(VLayoutWidget):
     ''' API '''
 
     def setData(self, img: np.ndarray, poly: PlanarPolygon, polys: List[PlanarPolygon]):
-        print(f'Polygon Selector got {len(polys)} polygons')
+        print(f'Polygon Selector got {len(polys)} polygons with average area {np.array([p.area() for p in polys]).mean()}')
         if img.ndim == 3 and img.shape[2] == 3:
             img = rgb_to_gray(img)
         else:
@@ -381,6 +403,12 @@ class AutoSegmentorWidget(SegmentorWidget):
         if hasattr(self, '_mask_proc'):
             self._mask_proc.reset_state()
 
+    def on_rois_created(self, rois: List[ROI]):
+        print(f'Got {len(rois)} proposals')
+        if len(rois) == 1:
+            self._img_proc.setPoly(rois[0]) # TODO: hack for visualization
+        super().on_rois_created(rois)
+
     ''' Private ''' 
 
     def _on_img_proc(self):
@@ -398,7 +426,8 @@ class AutoSegmentorWidget(SegmentorWidget):
             self.set_proposals(polys)
 
     def _on_mask_proc(self):
-        self.set_proposals(self._mask_proc.polygons)
+        F_inv = self._img_proc.poly_transform_inv
+        self.set_proposals([F_inv(p) for p in self._mask_proc.polygons])
 
     def _on_poly_sel(self, polys: List[PlanarPolygon]):
         super().set_proposals(polys)

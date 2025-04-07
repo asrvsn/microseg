@@ -349,7 +349,7 @@ class HistogramFilterWidget(pg.PlotWidget):
             pass  # Signal wasn't connected yet
         
         assert n_per_bin > 0
-        if len(data) > 0:
+        if len(data) > 1:
             if percentile:
                 # Use percentile range
                 data = data - data.min()
