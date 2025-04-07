@@ -137,8 +137,9 @@ class ImageProcessingWidget(VLayoutWidget):
                     img = skrest.denoise_invariant(img, dn_fn, denoiser_kwargs=dnkw)
                 break
         ## Polygon transforms
-        self._poly_transform = lambda p: (p - offset).set_res(scale, scale)
-        self._poly_transform_inv = lambda p: p.set_res(1/scale, 1/scale) + offset
+        voxsize = np.array([scale, scale])
+        self._poly_transform = lambda p: (p - offset).rescale(voxsize)
+        self._poly_transform_inv = lambda p: p.rescale(1/voxsize) + offset
         ## Set image
         self._processed_img = img
         print('Image processed')

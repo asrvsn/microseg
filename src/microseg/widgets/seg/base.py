@@ -144,7 +144,7 @@ class ROICreatorWidget(VLayoutWidget):
         self._recompute()
 
 class SegmentorWidget(VLayoutWidget, metaclass=QtABCMeta):
-    propose = QtCore.Signal(object) # List[ROI]
+    propose = QtCore.Signal(object) # (image, List[ROI])
     add = QtCore.Signal(object) # List[ROI] 
     cancel = QtCore.Signal()
     

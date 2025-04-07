@@ -90,13 +90,17 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None, fmt='ZXYC
         # Rectify shape based on available metadata
         if img.ndim < 4:
             with tifffile.TiffFile(path) as tif:
-                if tif.is_imagej:
+                if img.ndim == 2:
+                    img = img[np.newaxis, :, :, np.newaxis]
+                elif tif.is_imagej:
                     if not ('channels' in tif.imagej_metadata):
                         img = img[:, :, :, np.newaxis] # Image is ZXY
                     elif not ('slices' in tif.imagej_metadata):
                         img = np.array([img]) # Image is XYC
                     else:
                         raise ValueError('Image is <4D yet has both slices and channels, I dont get it.')
+                elif img.ndim == 3:
+                    img = img[:, :, :, np.newaxis] # Assume image is ZXY
                 else:
                     raise NotImplementedError('Cant read metadata from non-ImageJ tiff files yet')
         if not imscale is None:

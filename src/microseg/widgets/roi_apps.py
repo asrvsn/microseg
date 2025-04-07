@@ -71,16 +71,23 @@ class ImageSegmentorApp(SaveableApp):
 
     def readData(self, path: str) -> List[List[ROI]]:
         rois = pickle.load(open(path, 'rb'))
-        # Allow flat-list of ROIs for 1-stack images
-        if not type(rois[0]) is list:
-            rois = [rois]
-        # Allow unlabeled ROIs
-        lbl = max([max([r.lbl for r in subrois if type(r) is LabeledROI], default=0) for subrois in rois], default=0) + 1
-        for subrois in rois:
-            for i, r in enumerate(subrois):
-                if not type(r) is LabeledROI:
-                    subrois[i] = LabeledROI(lbl, r)
-                    lbl += 1
+        if type(rois) is list:
+            # Allow flat-list of ROIs for 1-stack images
+            if not type(rois[0]) is list:
+                rois = [rois]
+            # Allow unlabeled ROIs
+            lbl = max([max([r.lbl for r in subrois if type(r) is LabeledROI], default=0) for subrois in rois], default=0) + 1
+            for subrois in rois:
+                for i, r in enumerate(subrois):
+                    if not type(r) is LabeledROI:
+                        subrois[i] = LabeledROI(lbl, r)
+                        lbl += 1
+        elif type(rois) is PlanarPolygonPacking:
+            # Single level
+            rois = [LabeledROI(i, p) for i, p in enumerate(rois.polygons)]
+            rois = [rois] * self._zmax
+        else:
+            raise ValueError(f'Unknown data type: {type(rois)}')
         return rois
     
     def writeData(self, path: str, rois: List[List[ROI]]):
