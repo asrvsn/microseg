@@ -28,9 +28,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('file', type=str, help='Path to source img [tiff|jpg|png|czi|...]')
     parser.add_argument('-d', type=str, default='vertices', help='Descriptor')
+    parser.add_argument('-b', type=str, default='boundary', help='Boundary descriptor')
+    parser.add_argument('-t', '--transpose-xy', action='store_true', help='Transpose x and y coordinates')
     args = parser.parse_args()
 
     win = QtWidgets.QApplication(sys.argv)
-    app = VerticesExtractorApp(args.file, desc=args.d)
+    app = VerticesExtractorApp(args.file, desc=args.d, boundary_desc=args.b, transpose_xy=args.transpose_xy)
     app.show()
     sys.exit(win.exec())

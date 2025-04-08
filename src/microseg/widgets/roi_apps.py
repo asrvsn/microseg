@@ -190,10 +190,10 @@ class ZStackObjectViewer(SaveableWidget):
         # Create GL widget
         self._gl_widget = gl.GLViewWidget()
         self._gl_widget.keyPressEvent = lambda evt: self.keyPressEvent(evt)
-        viewsize = imgsize.copy() # Shape of viewport
-        viewsize[2] *= self._z_aniso
-        self._gl_widget.opts['center'] = pg.Vector(*(viewsize/2))
-        self._gl_widget.setCameraPosition(distance=viewsize.max() * 1.3)
+        # viewsize = imgsize.copy() # Shape of viewport
+        # viewsize[2] *= self._z_aniso
+        self._gl_widget.opts['center'] = pg.Vector(*(np.array(imgsize) * voxsize / 2))
+        # self._gl_widget.setCameraPosition(distance=viewsize.max() * 1.3)
         self._gl_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._main_layout.addWidget(self._gl_widget)
         
@@ -207,17 +207,17 @@ class ZStackObjectViewer(SaveableWidget):
         self._alpha_box = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.3)
         self._alpha_box.setSingleStep(0.05)
         self._bd_box = QCheckBox('Apply boundary')
+        self._bd_dilate_box = QDoubleSpinBox(minimum=1, maximum=2, value=1)
+        self._bd_dilate_box.setSingleStep(0.025)
         self._zmin_box = QSpinBox(minimum=0, maximum=self._zmax, value=0)
         self._zmax_box = QSpinBox(minimum=0, maximum=self._zmax, value=self._zmax)
         self._background_box = QCheckBox('Subtract background')
         self._background_box.setChecked(True)
         self._equalize_box = QCheckBox('Equalize')
         self._equalize_box.setChecked(True)
-        self._mc_level = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.5)
-        self._mc_level.setSingleStep(0.01)
-        self._spot_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=2.0)
+        self._spot_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=1.0)
         self._spot_sigma.setSingleStep(0.1)
-        self._outline_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=2.0)
+        self._outline_sigma = QDoubleSpinBox(minimum=0.0, maximum=10.0, value=1.0)
         self._outline_sigma.setSingleStep(0.1)
         self._hull_box = QCheckBox('Hull')
         self._wt_box = QCheckBox('Watertight only')
@@ -227,9 +227,7 @@ class ZStackObjectViewer(SaveableWidget):
         self._settings_layout.addWidget(QLabel("Render:"))
         # These controls proceed in cascading fashion
         self._controls = [
-            # ['Slice', None, self._update_slice, []], # Name, item, update_fn, opts
-            ['Volume', None, self._update_volume, [self._chan_box, self._equalize_box, self._background_box, self._alpha_box, self._bd_box, self._zmin_box, self._zmax_box]],
-            ['Surface', None, self._update_surface, [self._mc_level, self._wt_box]],
+            ['Volume', None, self._update_volume, [self._chan_box, self._equalize_box, self._background_box, self._alpha_box, self._bd_box, self._bd_dilate_box, self._zmin_box, self._zmax_box]],
             ['Mask', None, self._update_mask, [self._spot_sigma, self._outline_sigma, self._hull_box]],
             ['Vertices', None, self._update_vertices, [self._verts_box]],
         ]
@@ -270,7 +268,6 @@ class ZStackObjectViewer(SaveableWidget):
         self._boundary = None
         self._vol = None
         self._mask = None
-        self._surface = None
         self._vertices = None
         self._meshes = []
         self._rois = []
@@ -286,23 +283,19 @@ class ZStackObjectViewer(SaveableWidget):
             self._controls[i][1] = None # Reset state
         self._stack = img
         self._boundary = boundary
-        if not boundary is None:
+        has_bd = not (boundary is None)
+        if has_bd:
             self._bd_box.blockSignals(True)
             self._bd_box.setChecked(True)
             self._bd_box.blockSignals(False)
-        self._bd_box.setEnabled(not (boundary is None))
+        self._bd_box.setEnabled(has_bd)
+        self._bd_dilate_box.setEnabled(has_bd)
         self._enable_control(0)
 
     def setROIs(self, rois: List[List[ROI]]):
         assert not self._is_proposing
         self._rois = rois
         self._render_rois(rois)
-
-    # def setZ(self, z: int):
-    #     if z != self._z:
-    #         self._z = z
-    #         if self._active[0]:
-    #             self._update_view(0)
 
     def setXY(self, xy: Tuple[int, int]):
         self._cursor_xy = xy
@@ -359,24 +352,6 @@ class ZStackObjectViewer(SaveableWidget):
         if i < len(self._controls) - 1 and self._active[i+1]:
             self._update_view(i+1) # Cascade to next control
 
-    def _update_slice(self, item: Optional[gl.GLImageItem]) -> gl.GLImageItem:
-        print(f'updating slice to {self._z}')
-        img = self._stack[self._z, :, :, self._chan].T
-        img = img.astype(np.float32)  # Convert to float for proper scaling
-        img -= img.min()  # Shift min to 0
-        img /= img.max()  # Normalize to [0, 1]
-        img_8bit = (img * 255).astype(np.uint8)  # Scale to [0, 255]
-        alpha = np.zeros_like(img_8bit)
-        alpha[img > 0.02] = 255
-        img_rgba = np.stack([img_8bit] * 3 + [alpha], axis=-1)  # Add RGBA channels
-        if item is None:
-            item = gl.GLImageItem(img_rgba)
-        else:
-            item.setData(img_rgba)
-            item.resetTransform()  # Clear any previous transforms
-        item.translate(0, 0, self._z * self._z_aniso)
-        return item
-    
     def _update_volume(self, item: Optional[GLZStackItem]) -> GLZStackItem:
         print(f'Updating volume')
         self._chan = int(self._chan_box.currentText())
@@ -394,7 +369,8 @@ class ZStackObjectViewer(SaveableWidget):
 
         # Boundary
         if self._bd_box.isChecked():
-            mask = ~self._boundary.to_mask(data.shape[1:]) # XY mask
+            bd = self._boundary * self._bd_dilate_box.value()
+            mask = ~bd.to_mask(data.shape[1:]) # XY mask
             data[:, mask] = 0 
 
         # Z-slice selection
@@ -427,22 +403,6 @@ class ZStackObjectViewer(SaveableWidget):
         else:
             item.setData(image)
         return item
-
-    def _update_surface(self, item: Optional[GLTriangulationItem]) -> GLTriangulationItem:
-        vol = self._vol.transpose(2, 1, 0) # ZXY -> XYZ
-        level = self._mc_level.value() * (vol.max() - vol.min()) + vol.min()
-        self._surface = Triangulation.from_volume(
-            vol,
-            method='marching_cubes',
-            level=level,
-        )
-        self._surface.pts *= self._voxsize
-        wt = self._wt_box.isChecked()
-        if item is None:
-            item = GLTriangulationItem(self._surface, color_mode='cc', only_watertight=wt)
-        else:
-            item.setData(self._surface, only_watertight=wt)
-        return item
     
     def _update_vertices(self, item: Optional[gl.GLScatterPlotItem]) -> gl.GLScatterPlotItem:
         method = self._verts_box.currentText()
@@ -458,10 +418,6 @@ class ZStackObjectViewer(SaveableWidget):
             coords *= self._voxsize
             hull = ConvexHull(coords)
             self._vertices = coords[hull.vertices]
-        elif method == 'surface':
-            assert not self._surface is None
-            ccs = self._surface.get_connected_components()
-            self._vertices = np.array([cc.get_centroid() for cc in ccs])
         else:
             raise ValueError(f'Unknown centroid method: {method}')
         if item is None:
@@ -569,16 +525,19 @@ class VolumeSegmentorApp(SaveableApp):
     '''
     Standalone segmentation app for extracting 3d objects from volumetric (voxel) images
     '''
-    def __init__(self, img_path: str, desc: str='objects', *args, **kwargs):
+    def __init__(self, img_path: str, desc: str='objects', boundary_desc: str='boundary', transpose_xy: bool=False, *args, **kwargs):
         # State
         self._img_path = img_path
-        self._img = load_stack(img_path, fmt='ZXYC')
-        self._voxsize = get_voxel_size(img_path, fmt='XYZ')
-        self._boundary_path = os.path.splitext(img_path)[0] + '.boundary'
+        self._img = load_stack(img_path, fmt=('ZXYC' if not transpose_xy else 'ZYXC'))
+        self._voxsize = get_voxel_size(img_path, fmt=('XYZ' if not transpose_xy else 'YXZ'))
+        self._boundary_path = os.path.splitext(img_path)[0] + f'.{boundary_desc}'
         self._boundary = None
         if os.path.exists(self._boundary_path):
             print(f'Loading boundary from {self._boundary_path}')
             self._boundary = pickle.load(open(self._boundary_path, 'rb'))
+            if type(self._boundary) is Ellipse:
+                self._boundary = self._boundary.discretize(100)
+            assert type(self._boundary) is PlanarPolygon
         imgsize = np.array([self._img.shape[1], self._img.shape[2], self._img.shape[0]]) # XYZ
 
         # Widgets

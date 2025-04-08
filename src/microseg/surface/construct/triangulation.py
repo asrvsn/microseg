@@ -140,8 +140,8 @@ class Register3DWindow(MainWindow):
     
 class SurfaceConstructorApp(SaveableApp):
     tri_methods = [
-        'advancing_front',
         'chull',
+        'advancing_front',
     ]
     subdiv_methods = [
         'modified_butterfly',
@@ -219,8 +219,8 @@ class SurfaceConstructorApp(SaveableApp):
         self._recompute_tri(push=False)
 
         super().__init__(
-            f'Constructing surface from {os.path.basename(pts_path)}', 
-            f'{os.path.splitext(pts_path)[0]}.surface',
+            f'Constructing triangulation from {os.path.basename(pts_path)}', 
+            f'{os.path.splitext(pts_path)[0]}.triangulation',
             *args, **kwargs
         )
         self.setCentralWidget(self._main)

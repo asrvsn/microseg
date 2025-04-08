@@ -12,7 +12,7 @@ import skimage
 import skimage.measure
 import math
 
-from matgeo import Triangulation
+from matgeo import Triangulation, Ellipsoid
 from .base import MainWindow
 from microseg.utils.colors import *
 
@@ -168,6 +168,23 @@ class GLTriangulationItem(gl.GLMeshItem):
             md_kwargs['faceColors'] = self.FACE_COLORS[np.arange(len(tri.simplices)) % len(self.FACE_COLORS)]
         md = gl.MeshData(vertexes=tri.pts, faces=tri.simplices, **md_kwargs)
         self.setMeshData(meshdata=md)
+
+class GLEllipsoidItem(gl.GLMeshItem):
+
+    def __init__(self, *args, ell: Ellipsoid=None, **kwargs):
+        kwargs = GLHoverableSurfaceViewWidget.mesh_opts | kwargs
+        super().__init__(*args, **kwargs)
+        self.setData(ell)
+
+    def setData(self, ell: Ellipsoid=None, **md_kwargs):
+        if ell is None:
+            self.setMeshData(meshdata=None)
+        else:
+            md = gl.MeshData.sphere(rows=30, cols=60)
+            pts = md.vertexes()
+            pts = ell.map_sphere(pts)
+            md = gl.MeshData(vertexes=pts, faces=md.faces(), **md_kwargs)
+            self.setMeshData(meshdata=md)
 
 class GLHoverableSurfaceViewWidget(gl.GLViewWidget):
     '''
