@@ -43,10 +43,13 @@ class EllipsoidConstructorApp(SaveableApp):
         centmin, centmax = self._center - diam, self._center + diam
         self._sliders = [None] * 3
         for i in range(3):
-            self._sliders[i] = FloatSlider(label=f'{["X", "Y", "Z"][i]}', step=0.1)
+            self._sliders[i] = FloatSlider(label=f'{["X", "Y", "Z"][i]}', step=0.05)
             self._sliders[i].setData(centmin[i], centmax[i], self._center[i])
             self._settings.addWidget(self._sliders[i])
             self._sliders[i].valueChanged.connect(self._update_center)
+        self._scale_sld = FloatSlider(label='Scale', step=0.02)
+        self._scale_sld.setData(1, 2, 1)
+        self._settings.addWidget(self._scale_sld)
 
         self._settings.addStretch()
         self._fit_btn = QPushButton('Fit')
@@ -113,7 +116,7 @@ class EllipsoidConstructorApp(SaveableApp):
         self._redraw_center()
 
     def _fit(self):
-        # self._ell = Ellipsoid.fit(self._pts, self._center)
+        # self._ell = Ellipsoid.fit(self._pts, self._center) * self._scale_sld.value()
         # Mirror image points about plane at self.center[2]
         pts_mirror = self._pts.copy()
         pts_mirror[:, 2] = 2 * self._center[2] - pts_mirror[:, 2]
