@@ -33,8 +33,8 @@ dependencies = [
     "aicspylibczi>=3.1.1",
     "cellpose >=4.0.0",
     "tifffile",
-    "pyclesperanto-prototype",
-    "antspyx",
+    "pyclesperanto-prototype; python_version >= '3.8' --no-deps",
+    "antspyx; python_version >= '3.8' --no-deps",
     
     # Geometry and computation
     "numpy>=2.2.0",
