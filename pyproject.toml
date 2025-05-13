@@ -31,12 +31,13 @@ dependencies = [
     "scikit-image",  # skimage
     "aicsimageio",
     "aicspylibczi>=3.1.1",
-    "cellpose >=3.0.0",
+    "cellpose >=4.0.0",
     "tifffile",
     "pyclesperanto-prototype",
+    "antspyx",
     
     # Geometry and computation
-    "numpy",
+    "numpy>=2.2.0",
     "scipy",
     "shapely",
     "upolygon",

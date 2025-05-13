@@ -21,35 +21,23 @@ from .base import *
 from .auto import *
 
 class CellposeSegmentorWidget(AutoSegmentorWidget):
-    USE_GPU: bool=False
-    MODELS: List[str] = [
-        'cyto3',
-        'nuclei',
-    ]
+    USE_GPU: bool=True
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         # Widgets
         ## Cellpose settings
-        mod_wdg = HLayoutWidget()
-        mod_wdg.addWidget(QLabel('Model:'))
-        self._cp_mod_drop = QComboBox()
-        self._cp_mod_drop.addItems(self.MODELS)
-        mod_wdg.addWidget(self._cp_mod_drop)
-        self._auto_wdg.addWidget(mod_wdg)
-        cellprob_wdg = HLayoutWidget()
-        cellprob_wdg.addWidget(QLabel('Cellprob:'))
-        self._cp_cellprob_sld = FloatSlider(step=0.1)
-        cellprob_wdg.addWidget(self._cp_cellprob_sld)
-        self._auto_wdg.addWidget(cellprob_wdg)
+        self._cp_diam_sld = FloatSlider(label='Diam scaling',step=0.01)
+        self._cp_diam_sld.setData(0.5, 2, 1)
+        self._auto_wdg.addWidget(self._cp_diam_sld)
+
+        self._cp_cellprob_sld = FloatSlider(label='Cellprob', step=0.1)
+        self._cp_cellprob_sld.setData(-3, 4, 0.)
+        self._auto_wdg.addWidget(self._cp_cellprob_sld)
 
         # State
-        self._set_cp_model(0)
-        self._cp_cellprob_sld.setData(-3, 4, 0.)
-
-        # Listeners
-        self._cp_mod_drop.currentIndexChanged.connect(self._set_cp_model)
+        self._set_cp_model()
 
     ''' Overrides '''
 
@@ -73,7 +61,7 @@ class CellposeSegmentorWidget(AutoSegmentorWidget):
         Returns mask in the original (un-downscaled) coordinate system
         '''
         # diam = poly.circular_radius() * 2
-        diam = poly.diameter()
+        diam = poly.diameter() * self._cp_diam_sld.value()
         cellprob = self._cp_cellprob_sld.value()
         mask = self._cp_model.eval(
             img,
@@ -92,14 +80,16 @@ class CellposeSegmentorWidget(AutoSegmentorWidget):
 
     ''' Private methods '''
 
-    def _set_cp_model(self, idx: int):
+    def _set_cp_model(self):
         '''
         Sets the cellpose model
         '''
-        self._cp_model = cellpose.models.Cellpose(
-            model_type=self.MODELS[idx],
+        self._cp_model = cellpose.models.CellposeModel(
             gpu=self.USE_GPU
         )
+        # Print GPU information
+        device = self._cp_model.device
+        print(f"Cellpose model using device: {device}")
 
         
 ## TODO: add spectral clustering for single-segment

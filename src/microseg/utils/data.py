@@ -23,8 +23,11 @@ def get_voxel_size(path: str, fmt: str='XYZ') -> np.ndarray:
     _, fext = os.path.splitext(path)
     if fext in ['.czi', '.tif', '.tiff']:
         sizes = AICSImage(path).physical_pixel_sizes
+        z = sizes.Z
+        if z is None:
+            z = 1.0 # TODO: hack
         return np.array([{
-            'Z': sizes.Z, 'Y': sizes.Y, 'X': sizes.X
+            'Z': z, 'Y': sizes.Y, 'X': sizes.X
         }[c] for c in fmt.upper()])
     else:
         raise NotImplementedError
