@@ -17,8 +17,7 @@ import io
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 
-def pretty_print_xml(elem):
-    """Return a pretty-printed XML string for the Element."""
+def pretty_print_xml(elem: ET.Element) -> str:
     rough_string = ET.tostring(elem, 'utf-8')
     reparsed = minidom.parseString(rough_string)
     
@@ -52,7 +51,6 @@ def get_voxel_size(path: str, fmt: str='XYZ') -> np.ndarray:
                 'Y': sizes[1],
                 'Z': sizes[2]
             }
-            # Return in requested format
             return np.array([sizes_dict[c] for c in fmt.upper()])
         else:
             raise ValueError("Could not find voxel size in XML")
@@ -64,7 +62,7 @@ def get_voxel_size(path: str, fmt: str='XYZ') -> np.ndarray:
         }[c] for c in fmt.upper()])
         assert not any(s == None for s in sizes), f'Missing metadata in {path}'
         return sizes
-        
+
     else:
         raise NotImplementedError
 

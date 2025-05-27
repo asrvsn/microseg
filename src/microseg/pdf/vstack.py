@@ -122,14 +122,15 @@ def stack_two_pdfs(pdf1_path: str, pdf2_path: str, output_path: str, trim1: str 
 
 if __name__ == '__main__':
     import argparse
+    from microseg.utils.args import GuiArgumentParser
 
-    parser = argparse.ArgumentParser(description="Stack two PDF files vertically, with optional trims (LaTeX style, in mm).")
-    parser.add_argument("pdf1", help="Path to the first (top) PDF file.")
-    parser.add_argument("pdf2", help="Path to the second (bottom) PDF file.")
+    parser = GuiArgumentParser(description="Stack two PDF files vertically, with optional trims (LaTeX style, in mm).")
+    parser.add_argument("pdf1", type=argparse.FileType('r'), help="Path to the first (top) PDF file.")
+    parser.add_argument("pdf2", type=argparse.FileType('r'), help="Path to the second (bottom) PDF file.")
     parser.add_argument("-o", "--output", required=True, help="Path to the output stacked PDF file.")
     parser.add_argument("--trim1", default="", help="Trim for first PDF: 'left bottom right top' in mm (LaTeX style).")
     parser.add_argument("--trim2", default="", help="Trim for second PDF: 'left bottom right top' in mm (LaTeX style).")
     parser.add_argument("--fudge", type=float, default=1.0, help="Fudge factor to reduce heights (default: 1.0)")
     args = parser.parse_args()
 
-    stack_two_pdfs(args.pdf1, args.pdf2, args.output, trim1=args.trim1, trim2=args.trim2, fudge_factor=args.fudge)
+    stack_two_pdfs(args.pdf1.name, args.pdf2.name, args.output, trim1=args.trim1, trim2=args.trim2, fudge_factor=args.fudge)

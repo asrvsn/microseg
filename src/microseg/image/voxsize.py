@@ -5,10 +5,11 @@ if __name__ == '__main__':
     import sys
     import argparse
     from microseg.utils.data import get_voxel_size
+    from microseg.utils.args import GuiArgumentParser
     
-    parser = argparse.ArgumentParser()
-    parser.add_argument('file', type=str, help='Path to source img [tiff|jpg|png|czi|...]')
+    parser = GuiArgumentParser()
+    parser.add_argument('file', type=argparse.FileType('r'), help='Path to source img [tiff|jpg|png|czi|...]')
     args = parser.parse_args()
 
-    voxsize = get_voxel_size(args.file)
+    voxsize = get_voxel_size(args.file.name)
     print('Voxel size (XYZ):', voxsize.tolist())

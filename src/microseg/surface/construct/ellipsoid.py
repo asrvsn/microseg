@@ -127,13 +127,14 @@ class EllipsoidConstructorApp(SaveableApp):
 if __name__ == '__main__':
     import sys
     import argparse
+    from microseg.utils.args import GuiArgumentParser
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('file', type=str, help='Path to source points file (numpy format)')
+    parser = GuiArgumentParser()
+    parser.add_argument('file', type=argparse.FileType('r'), help='Path to source points file (numpy format)')
     parser.add_argument('--ignore-existing', action='store_true', help='Ignore previously registered points')
     args = parser.parse_args()
 
     app = QtWidgets.QApplication(sys.argv)
-    window = EllipsoidConstructorApp(args.file, ignore_existing=args.ignore_existing)
+    window = EllipsoidConstructorApp(args.file.name, ignore_existing=args.ignore_existing)
     window.show()
     sys.exit(app.exec_())

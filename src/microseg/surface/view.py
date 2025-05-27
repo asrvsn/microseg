@@ -33,12 +33,13 @@ class SurfaceViewerApp(MainWindow):
 if __name__ == '__main__':
     import argparse
     import sys
+    from microseg.utils.args import GuiArgumentParser
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('path', type=str, help='Path to triangulation (pickle file)')
+    parser = GuiArgumentParser()
+    parser.add_argument('path', type=argparse.FileType('r'), help='Path to triangulation (pickle file)')
     args = parser.parse_args()
 
     app = QtWidgets.QApplication(sys.argv)
-    window = SurfaceViewerApp(args.path)
+    window = SurfaceViewerApp(args.path.name)
     window.show()
     sys.exit(app.exec_())

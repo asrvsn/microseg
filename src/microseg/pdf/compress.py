@@ -6,9 +6,10 @@ if __name__ == '__main__':
     import argparse
     import subprocess
     import os
+    from microseg.utils.args import GuiArgumentParser
 
-    parser = argparse.ArgumentParser(description="Compress a PDF file")
-    parser.add_argument("path", type=str, help="Path to the PDF file")
+    parser = GuiArgumentParser(description="Compress a PDF file")
+    parser.add_argument("path", type=argparse.FileType('r'), help="Path to the PDF file")
     parser.add_argument("-q", "--jpeg-quality", type=int, default=75, help="JPEG quality")
     parser.add_argument("-d", "--dpi", type=int, default=300, help="DPI")
     parser.add_argument("-o", "--output", type=str, required=True, help="Output path")
@@ -39,6 +40,6 @@ if __name__ == '__main__':
         "-dBATCH",  # Batch mode (exit when done)
         "-dQUIET",  # Suppress messages
         f"-sOutputFile={args.output}",  # Output file
-        args.path  # Input file
+        args.path.name  # Input file
     ]
     subprocess.run(gs_command, check=True)

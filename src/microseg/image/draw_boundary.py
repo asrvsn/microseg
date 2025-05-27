@@ -36,12 +36,14 @@ if __name__ == '__main__':
     import sys
     import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('file', type=str, help='Path to source img [tiff|jpg|png|czi|...]')
+    from microseg.utils.args import GuiArgumentParser
+
+    parser = GuiArgumentParser()
+    parser.add_argument('file', type=argparse.FileType('r'), help='Path to source img [tiff|jpg|png|czi|...]')
     parser.add_argument('-d', type=str, default='boundary', help='Descriptor')
     args = parser.parse_args()
 
     win = QtWidgets.QApplication(sys.argv)
-    app = BoundaryDrawerApp(args.file, desc=args.d)
+    app = BoundaryDrawerApp(args.file.name, desc=args.d)
     app.show()
     sys.exit(win.exec())

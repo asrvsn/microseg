@@ -70,13 +70,14 @@ class EllipsoidProjectorApp(SaveableApp):
 if __name__ == '__main__':
     import sys
     import argparse
+    from microseg.utils.args import GuiArgumentParser
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('polys_path', type=str, help='Path to polygons file (pickle format)')
-    parser.add_argument('ell_path', type=str, help='Path to ellipsoid file (pickle format)')
+    parser = GuiArgumentParser()
+    parser.add_argument('polys_path', type=argparse.FileType('r'), help='Path to polygons file (pickle format)')
+    parser.add_argument('ell_path', type=argparse.FileType('r'), help='Path to ellipsoid file (pickle format)')
     args = parser.parse_args()
 
     app = QtWidgets.QApplication(sys.argv)
-    window = EllipsoidProjectorApp(args.polys_path, args.ell_path)
+    window = EllipsoidProjectorApp(args.polys_path.name, args.ell_path.name)
     window.show()
     sys.exit(app.exec_())
