@@ -14,23 +14,81 @@ import pickle
 import sys
 import pymupdf
 import io
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
+
+def pretty_print_xml(elem):
+    """Return a pretty-printed XML string for the Element."""
+    rough_string = ET.tostring(elem, 'utf-8')
+    reparsed = minidom.parseString(rough_string)
+    
+    # Remove empty text nodes
+    for node in reparsed.getElementsByTagName('*'):
+        if node.firstChild and node.firstChild.nodeType == node.TEXT_NODE and not node.firstChild.data.strip():
+            node.removeChild(node.firstChild)
+    
+    # Get pretty string and remove excessive newlines
+    pretty = reparsed.toprettyxml(indent="  ")
+    # Remove empty lines
+    lines = [line for line in pretty.split('\n') if line.strip()]
+    return '\n'.join(lines)
 
 def get_voxel_size(path: str, fmt: str='XYZ') -> np.ndarray:
     '''
     Get physical pixel sizes
     '''
     assert os.path.exists(path), f'File not found: {path}'
-    _, fext = os.path.splitext(path)
-    if fext in ['.czi', '.tif', '.tiff']:
+    fbase, fext = os.path.splitext(path)
+    
+    # Bruker lightsheet xml configuration
+    if os.path.exists(f'{fbase}.bruker_xml'):
+        tree = ET.parse(f'{fbase}.bruker_xml')
+        root = tree.getroot()
+        voxel_size_elem = root.find('.//voxelSize/size')
+        if voxel_size_elem is not None:
+            sizes = np.array([float(x) for x in voxel_size_elem.text.split()])
+            sizes_dict = {
+                'X': sizes[0],
+                'Y': sizes[1],
+                'Z': sizes[2]
+            }
+            # Return in requested format
+            return np.array([sizes_dict[c] for c in fmt.upper()])
+        else:
+            raise ValueError("Could not find voxel size in XML")
+            
+    elif fext in ['.czi', '.tif', '.tiff']:
         sizes = AICSImage(path).physical_pixel_sizes
-        z = sizes.Z
-        if z is None:
-            z = 1.0 # TODO: hack
-        return np.array([{
-            'Z': z, 'Y': sizes.Y, 'X': sizes.X
+        sizes = np.array([{
+            'Z': sizes.Z, 'Y': sizes.Y, 'X': sizes.X
         }[c] for c in fmt.upper()])
+        assert not any(s == None for s in sizes), f'Missing metadata in {path}'
+        return sizes
+        
     else:
         raise NotImplementedError
+
+def get_view_transform(path: str) -> np.ndarray:
+    '''
+    Get the ViewTransform affine matrix from the XML file
+    Returns a (3,4) array representing the affine transformation
+    '''
+    fbase, _ = os.path.splitext(path)
+    if os.path.exists(f'{fbase}.bruker_xml'):
+        tree = ET.parse(f'{fbase}.bruker_xml')
+        root = tree.getroot()
+        
+        # Get the first ViewTransform's affine matrix
+        affine_elem = root.find('.//ViewTransform/affine')
+        if affine_elem is not None:
+            # Split the space-separated string into numbers
+            affine = np.array([float(x) for x in affine_elem.text.split()])
+            # Reshape into 3x4 matrix
+            return affine.reshape(3, 4)
+        else:
+            raise ValueError("Could not find ViewTransform in XML")
+    else:
+        raise ValueError(f"No XML file found at {fbase}.bruker_xml")
 
 def load_XY_image(path: str, gray: bool=True, imscale: Optional[Tuple[float, float]]=None) -> np.ndarray:
     '''
