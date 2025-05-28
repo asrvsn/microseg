@@ -16,6 +16,7 @@ import pymupdf
 import io
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+from scipy.io import loadmat
 
 def pretty_print_xml(elem: ET.Element) -> str:
     rough_string = ET.tostring(elem, 'utf-8')
@@ -71,22 +72,29 @@ def get_view_transform(path: str) -> np.ndarray:
     Get the ViewTransform affine matrix from the XML file
     Returns a (3,4) array representing the affine transformation
     '''
-    fbase, _ = os.path.splitext(path)
-    if os.path.exists(f'{fbase}.bruker_xml'):
-        tree = ET.parse(f'{fbase}.bruker_xml')
+    _, fext = os.path.splitext(path)
+    if fext in ['.bruker_xml']:
+        tree = ET.parse(path)
         root = tree.getroot()
-        
-        # Get the first ViewTransform's affine matrix
         affine_elem = root.find('.//ViewTransform/affine')
         if affine_elem is not None:
-            # Split the space-separated string into numbers
             affine = np.array([float(x) for x in affine_elem.text.split()])
-            # Reshape into 3x4 matrix
-            return affine.reshape(3, 4)
+            affine = affine.reshape(3, 4)
         else:
             raise ValueError("Could not find ViewTransform in XML")
+    elif fext in ['.txt']:
+        affine = np.loadtxt(path)
+    elif fext in ['.npy']:
+        affine = np.load(path)
+    elif fext in ['.mat']:
+        affine = loadmat(path)['affine']
+    elif fext in ['.csv']:
+        affine = np.loadtxt(path, delimiter=',')
     else:
-        raise ValueError(f"No XML file found at {fbase}.bruker_xml")
+        raise ValueError(f"Unsupported file type: {fext}")
+    
+    assert affine.shape == (3, 4), f'Expected (3, 4) matrix, got {affine.shape}'
+    return affine
 
 def load_XY_image(path: str, gray: bool=True, imscale: Optional[Tuple[float, float]]=None) -> np.ndarray:
     '''

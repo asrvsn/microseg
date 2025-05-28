@@ -92,3 +92,25 @@ class VGroupBox(QtWidgets.QGroupBox):
 
 	def addSpacing(self, s: int):
 		self._layout.addSpacing(s)
+
+	def addStretch(self):
+		self._layout.addStretch()
+
+class HGroupBox(QtWidgets.QGroupBox):
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self._layout = HLayout()
+		self.setLayout(self._layout)
+
+	def addWidget(self, w: QtWidgets.QWidget):
+		self._layout.addWidget(w)
+
+	def addSpacing(self, s: int):
+		self._layout.addSpacing(s)
+
+	def addStretch(self):
+		self._layout.addStretch()
+
+	def insertWidget(self, i: int, w: QtWidgets.QWidget):
+		self._layout.insertWidget(i, w)
