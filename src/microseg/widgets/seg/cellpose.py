@@ -29,7 +29,7 @@ class CellposeSegmentorWidget(AutoSegmentorWidget):
         # Widgets
         ## Cellpose settings
         self._cp_diam_sld = FloatSlider(label='Diam scaling',step=0.01)
-        self._cp_diam_sld.setData(0.5, 2, 1)
+        self._cp_diam_sld.setData(0.01, 2, 0.5)
         self._auto_wdg.addWidget(self._cp_diam_sld)
 
         self._cp_cellprob_sld = FloatSlider(label='Cellprob', step=0.1)
