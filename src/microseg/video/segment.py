@@ -5,7 +5,11 @@ Particularly designed for detecting beads in flow with various background artifa
 import numpy as np
 import scipy.ndimage
 from typing import Tuple
-from qtpy.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QLabel
+from qtpy.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QLabel, QPushButton
+from qtpy import QtWidgets
+from tqdm import tqdm
+import tifffile
+import os
 
 from microseg.widgets.roi_apps import ImageSegmentorApp
 from microseg.widgets.base import HLayoutWidget
@@ -101,11 +105,14 @@ class VideoSegmentorApp(ImageSegmentorApp):
         self._threshold_spinbox = QDoubleSpinBox(minimum=0.0, maximum=1.0, value=0.12, singleStep=0.01)
         motion_controls.addWidget(self._threshold_spinbox)
         motion_controls.addSpacing(10)
+        self._export_btn = QPushButton('Export')
+        motion_controls.addWidget(self._export_btn)
         
         # Connect signals
         self._motion_detector_combo.currentTextChanged.connect(self._update_motion_detector)
         self._threshold_checkbox.stateChanged.connect(self._update_motion_params)
         self._threshold_spinbox.valueChanged.connect(self._update_motion_params)
+        self._export_btn.clicked.connect(self._export)
         
         self._main.addWidget(motion_controls)
 
@@ -119,10 +126,10 @@ class VideoSegmentorApp(ImageSegmentorApp):
             else:
                 self._motion_detectors[k].show()
         self._motion_detector = self._motion_detectors[key]
-        zmin, zmax = self._motion_detector.query_slider_range()
-        z = self._z if self._z is not None else zmin
-        z = max(zmin, min(z, zmax))
-        self._z_slider.setData(zmin, zmax, z)
+        self._zmin, self._zmax = self._motion_detector.query_slider_range()
+        z = self._z if self._z is not None else self._zmin
+        z = max(self._zmin, min(z, self._zmax))
+        self._z_slider.setData(self._zmin, self._zmax, z)
         if set_frame:
             self._update_current_frame()
 
@@ -131,10 +138,28 @@ class VideoSegmentorApp(ImageSegmentorApp):
         self._apply_threshold = self._threshold_checkbox.isChecked()
         self._update_current_frame()
 
+    def _export(self):
+        exp_img = []
+        for z in tqdm(range(self._zmin, self._zmax), desc='Exporting video'):
+            exp_img.append(self._motion_detector.query_frame(z))
+        exp_img = np.stack(exp_img)
+        # exp_img = (exp_img * 255).astype(np.uint8)
+        orig_name = os.path.splitext(self._img_path)[0] # Use QT dialog for save path
+        save_path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save motion video', f'{orig_name}.motion.tif', 'TIFF (*.tif)')
+        if save_path:  # Only save if user didn't cancel
+            tifffile.imwrite(save_path, exp_img)
+            print(f'Saved motion video to {save_path}')
+
+    def _query_frame(self, z: int) -> np.ndarray:
+        frame = self._motion_detector.query_frame(z)
+        if self._apply_threshold:
+            frame = np.where(frame > self._motion_threshold, frame, 0)
+        return frame
+
     ''' Overrides'''
 
     def _update_current_frame(self):
-        frame = self._motion_detector.query_frame(self._z)
+        frame = self._query_frame(self._z)
         # Apply thresholding and morphological operations if enabled
         if self._apply_threshold:
             frame = np.where(frame > self._motion_threshold, frame, 0)
