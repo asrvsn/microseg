@@ -7,7 +7,7 @@ if __name__ == '__main__':
     from microseg.utils.data import get_voxel_size
     from microseg.utils.args import GuiArgumentParser
     
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Voxel Size Tool")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source img [tiff|jpg|png|czi|...]')
     args = parser.parse_args()
 

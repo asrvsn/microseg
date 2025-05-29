@@ -8,7 +8,7 @@ if __name__ == '__main__':
     import os
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser(description="Compress a PDF file")
+    parser = GuiArgumentParser(prog="PDF Compressor", description="Compress a PDF file")
     parser.add_argument("path", type=argparse.FileType('r'), help="Path to the PDF file")
     parser.add_argument("-q", "--jpeg-quality", type=int, default=75, help="JPEG quality")
     parser.add_argument("-d", "--dpi", type=int, default=300, help="DPI")

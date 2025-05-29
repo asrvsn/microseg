@@ -7,7 +7,7 @@ if __name__ == '__main__':
     import PIL.Image
     from microseg.utils.args import GuiArgumentParser
     
-    parser = GuiArgumentParser(description="Compress an image")
+    parser = GuiArgumentParser(prog="Image Compressor", description="Compress an image")
     parser.add_argument("file_in", type=argparse.FileType('r'), help="Path to source image")
     parser.add_argument("file_out", type=str, help="Path to output image")
     parser.add_argument("-q", "--quality", type=int, default=85, help="JPEG quality")

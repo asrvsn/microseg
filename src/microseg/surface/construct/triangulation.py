@@ -346,7 +346,7 @@ if __name__ == '__main__':
     import argparse
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Triangulation Constructor")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source points file (numpy format)')
     parser.add_argument('--ignore-existing', action='store_true', help='Ignore previously registered points')
     args = parser.parse_args()

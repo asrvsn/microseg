@@ -14,6 +14,7 @@ import pyqtgraph as pg
 from microseg.widgets.base import *
 from microseg.widgets.pg_gl import *
 from microseg.utils.colors import map_colors
+from microseg.utils.args import GuiArgumentParser
 
 class EllipsoidConstructorApp(SaveableApp):
     def __init__(self, pts_path: str,*args, **kwargs):
@@ -127,9 +128,8 @@ class EllipsoidConstructorApp(SaveableApp):
 if __name__ == '__main__':
     import sys
     import argparse
-    from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Ellipsoid Constructor")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source points file (numpy format)')
     parser.add_argument('--ignore-existing', action='store_true', help='Ignore previously registered points')
     args = parser.parse_args()

@@ -38,7 +38,7 @@ if __name__ == '__main__':
 
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Boundary Drawer")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source img [tiff|jpg|png|czi|...]')
     parser.add_argument('-d', type=str, default='boundary', help='Descriptor')
     args = parser.parse_args()

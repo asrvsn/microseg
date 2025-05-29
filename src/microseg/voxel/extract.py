@@ -26,7 +26,7 @@ if __name__ == '__main__':
     import argparse
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Voxel Vertex Extractor")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source img [tiff|jpg|png|czi|...]')
     parser.add_argument('-d', type=str, default='vertices', help='Descriptor')
     parser.add_argument('-b', type=str, default='boundary', help='Boundary descriptor')

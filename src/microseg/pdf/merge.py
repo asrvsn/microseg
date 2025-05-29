@@ -24,7 +24,7 @@ if __name__ == '__main__':
     import argparse
     from microseg.utils.args import GuiArgumentParser
     
-    parser = GuiArgumentParser(description="Merge multiple PDF files into one.")
+    parser = GuiArgumentParser(prog="PDF Merger", description="Merge multiple PDF files into one.")
     parser.add_argument("pdf_files", nargs="+", help="Paths to the PDF files to merge, in the desired order.")
     parser.add_argument("-o", "--output", required=True, help="Path to the output merged PDF file.")
     parser.add_argument("-d", "--delete", action="store_true", help="Delete source PDF files after merging.")

@@ -35,7 +35,7 @@ if __name__ == '__main__':
     import sys
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Surface Viewer")
     parser.add_argument('path', type=argparse.FileType('r'), help='Path to triangulation (pickle file)')
     args = parser.parse_args()
 

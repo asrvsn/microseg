@@ -124,7 +124,7 @@ if __name__ == '__main__':
     import argparse
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser(description="Stack two PDF files vertically, with optional trims (LaTeX style, in mm).")
+    parser = GuiArgumentParser(prog="PDF Stacker", description="Stack two PDF files vertically, with optional trims (LaTeX style, in mm).")
     parser.add_argument("pdf1", type=argparse.FileType('r'), help="Path to the first (top) PDF file.")
     parser.add_argument("pdf2", type=argparse.FileType('r'), help="Path to the second (bottom) PDF file.")
     parser.add_argument("-o", "--output", required=True, help="Path to the output stacked PDF file.")

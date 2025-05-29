@@ -30,7 +30,14 @@ class ArgumentDialog(QDialog):
         self.widgets = {}
         self.values = {}
         
-        self.setWindowTitle("Application Arguments")
+        # Use parser prog name with "Arguments" appended, or default
+        if parser.prog and parser.prog != 'argparse.py':
+            # Use the program name if it's meaningful
+            window_title = f'{parser.prog} Arguments'
+        else:
+            window_title = "Application Arguments"
+            
+        self.setWindowTitle(window_title)
         self.setModal(True)
         self.resize(500, 400)
         
@@ -39,6 +46,13 @@ class ArgumentDialog(QDialog):
     def _setup_ui(self):
         """Set up the dialog UI based on the parser's arguments."""
         layout = QVBoxLayout(self)
+        
+        # Add description at the top if it exists
+        if self.parser.description:
+            desc_label = QLabel(self.parser.description)
+            desc_label.setWordWrap(True)
+            desc_label.setStyleSheet("font-style: italic; color: #666; margin-bottom: 10px;")
+            layout.addWidget(desc_label)
         
         # Create scroll area for arguments
         scroll = QtWidgets.QScrollArea()
@@ -255,7 +269,7 @@ class GuiArgumentParser(argparse.ArgumentParser):
     Custom ArgumentParser that can show a GUI dialog when no CLI arguments are provided.
     
     Usage:
-        parser = GuiArgumentParser()
+        parser = GuiArgumentParser(prog="My Application")
         parser.add_argument('file', help='Input file')
         parser.add_argument('-d', '--desc', default='output', help='Description')
         args = parser.parse_args()
@@ -264,9 +278,10 @@ class GuiArgumentParser(argparse.ArgumentParser):
     If no arguments are provided, opens a GUI dialog for input.
     """
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, title: str = None, **kwargs):
         super().__init__(*args, **kwargs)
         self._gui_mode = False
+        self._gui_title = title
         
     def parse_args(self, args=None, namespace=None):
         """
@@ -349,7 +364,7 @@ if __name__ == '__main__':
     """
     
     def main():
-        parser = GuiArgumentParser(description="Test GUI-enabled argument parser")
+        parser = GuiArgumentParser(prog="Test Application", description="Test GUI-enabled argument parser")
         
         # Add various types of arguments to test the GUI
         parser.add_argument('file', type=argparse.FileType('r'), help='Path to input file')

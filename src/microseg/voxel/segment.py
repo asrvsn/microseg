@@ -8,7 +8,7 @@ if __name__ == '__main__':
     from microseg.widgets.roi_apps import *
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="3D Voxel Segmentor")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source img [tiff|jpg|png|czi|...]')
     parser.add_argument('-d', type=str, default='rois', help='Descriptor')
     args = parser.parse_args()

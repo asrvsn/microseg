@@ -72,7 +72,7 @@ if __name__ == '__main__':
     import argparse
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Ellipsoid Projector")
     parser.add_argument('polys_path', type=argparse.FileType('r'), help='Path to polygons file (pickle format)')
     parser.add_argument('ell_path', type=argparse.FileType('r'), help='Path to ellipsoid file (pickle format)')
     args = parser.parse_args()

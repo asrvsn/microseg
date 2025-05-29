@@ -8,7 +8,7 @@ if __name__ == '__main__':
     from matgeo import Triangulation
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Surface Exporter")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source triangulation file (pickle format)')
     args = parser.parse_args()
 

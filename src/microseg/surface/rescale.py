@@ -7,7 +7,7 @@ if __name__ == '__main__':
     import pickle
     from microseg.utils.args import GuiArgumentParser
 
-    parser = GuiArgumentParser()
+    parser = GuiArgumentParser(prog="Surface Rescaler")
     parser.add_argument('file', type=argparse.FileType('r'), help='Path to source triangulation (pickle file)')
     parser.add_argument('-s', '--scale', type=float, required=True, help='Scale factor')
     args = parser.parse_args()

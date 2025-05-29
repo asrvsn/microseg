@@ -1,8 +1,11 @@
 '''
 Base classes for building apps from ROI editors
 '''
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
+import os
+import pickle
 import pyqtgraph.opengl as gl # Has to be imported before qtpy
+from qtpy.QtCore import Qt
 from matgeo import Triangulation
 from scipy.spatial import cKDTree, ConvexHull
 import skimage
@@ -13,11 +16,13 @@ import scipy.ndimage
 import pyclesperanto_prototype as cle
 import skimage
 import skimage.morphology
+import numpy as np
 
 from .base import *
 from .pg import *
 from .roi_image import *
 from .pg_gl import *
+from microseg.utils.data import load_stack, get_voxel_size
 
 class ImageSegmentorApp(SaveableApp):
     '''
@@ -25,7 +30,7 @@ class ImageSegmentorApp(SaveableApp):
     '''
     def __init__(self, img_path: str, desc: str='rois', *args, **kwargs):
         # State
-        self._z = 0
+        self._z = None
         self._img_path = img_path
         self._img = load_stack(img_path, fmt='ZXYC')
         self._zmax = self._img.shape[0]
@@ -35,6 +40,7 @@ class ImageSegmentorApp(SaveableApp):
         self._main = VLayoutWidget()
         self._creator = ROIsCreator()
         self._main._layout.addWidget(self._creator)
+        
         self._z_slider = IntegerSlider(mode='scroll')
         self._main._layout.addWidget(self._z_slider)
         if self._zmax == 1:
@@ -43,6 +49,7 @@ class ImageSegmentorApp(SaveableApp):
         else:
             print(f'Received z-stack with {self._zmax} slices, enabling z-slider')
             self._z_slider.setData(0, self._zmax-1, self._z)
+            
 
         # Listeners
         self._creator.add.connect(self._add)
@@ -51,7 +58,7 @@ class ImageSegmentorApp(SaveableApp):
 
         # Run data load and rest of initialization in superclass
         self._pre_super_init() # TODO: so ugly
-        self._creator.setImage(self._img[self._z])
+        self._set_z(0)
         super().__init__(
             f'Segmenting {desc} on image: {os.path.basename(img_path)}',
             f'{os.path.splitext(img_path)[0]}.{desc}',
@@ -118,10 +125,13 @@ class ImageSegmentorApp(SaveableApp):
         z = max(0, min(z, self._zmax-1))
         if z != self._z:
             if set_slider:
-                self._z_slider.setValue(z) # Callback will go to next branch
+                self._z_slider.setValue(z)  # Callback will go to next branch
             else:
                 self._z = z
-                self._creator.setData(self._img[z], self._rois[z])
+                self._update_current_frame()
+
+    def _update_current_frame(self):
+        self._creator.setData(self._img[z], self._rois[z])
 
     @property
     def next_label(self) -> int:
