@@ -1,6 +1,11 @@
-cmake_minimum_required(VERSION 3.20...3.26)
+cmake_minimum_required(VERSION 3.5)
 
 project(microseg LANGUAGES CXX)
+
+# Set C++ standard to C++17
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 if (NOT SKBUILD)
   message(WARNING "\
@@ -26,7 +31,25 @@ if (NOT SKBUILD)
 endif()
 
 # Try to import all Python components potentially needed by nanobind
-find_package(Python 3.8
+if(DEFINED ENV{CONDA_PREFIX})
+    set(Python_ROOT_DIR "$ENV{CONDA_PREFIX}")
+    message(STATUS "Setting Python hints for conda environment: ${Python_ROOT_DIR}")
+    
+    # Set Python executable based on platform
+    if(WIN32)
+        set(Python_EXECUTABLE "$ENV{CONDA_PREFIX}/python.exe")
+        # Windows conda environments need explicit library and include paths
+        set(Python_INCLUDE_DIR "$ENV{CONDA_PREFIX}/include")
+        set(Python_LIBRARY "$ENV{CONDA_PREFIX}/libs/python310.lib")
+    else()
+        set(Python_EXECUTABLE "$ENV{CONDA_PREFIX}/bin/python")
+    endif()
+    
+    # For conda environments, let CMake find the Python installation automatically
+    # by setting the root directory - this is more reliable than manually setting paths
+endif()
+
+find_package(Python 3.10
   REQUIRED COMPONENTS Interpreter Development.Module
   OPTIONAL_COMPONENTS Development.SABIModule)
 
