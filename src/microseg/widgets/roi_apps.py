@@ -28,11 +28,19 @@ class ImageSegmentorApp(SaveableApp):
     '''
     Simple usable app for segmenting single (or stacks) of images in ZXYC format
     '''
-    def __init__(self, img_path: str, desc: str='rois', *args, **kwargs):
+    def __init__(self, img_path: str, desc: str='rois', *args, grayscale: bool=False, **kwargs):
         # State
         self._z = None
         self._img_path = img_path
         self._img = load_stack(img_path, fmt='ZXYC')
+        if self._img.ndim == 4 and self._img.shape[3] == 1:
+            self._img = self._img[:, :, :, 0] # Simplify things...
+        if grayscale:
+            if self._img.ndim == 4:
+                assert self._img.shape[3] == 3, f'Unexpected number of channels for grayscale conversion, got image shape: {self._img.shape}'
+                self._img = np.array([rgb_to_gray(img) for img in self._img])
+            else:
+                assert self._img.ndim == 3, 'Expected 3D image'
         self._zmax = self._img.shape[0]
         self._rois = [[] for _ in range(self._zmax)]
         

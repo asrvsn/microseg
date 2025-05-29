@@ -5,11 +5,12 @@ Particularly designed for detecting beads in flow with various background artifa
 import numpy as np
 import scipy.ndimage
 from typing import Tuple
-from qtpy.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QLabel, QPushButton
+from qtpy.QtWidgets import QCheckBox, QComboBox, QDoubleSpinBox, QLabel, QPushButton, QSpinBox
 from qtpy import QtWidgets
 from tqdm import tqdm
 import tifffile
 import os
+from skimage import morphology
 
 from microseg.widgets.roi_apps import ImageSegmentorApp
 from microseg.widgets.base import HLayoutWidget
@@ -51,9 +52,37 @@ class MedianMotionDetector(MotionDetector):
         self._median_background = np.median(vid, axis=0)
         self._mean_intensity = vid.mean()
 
+        self._mean_adj_box = QCheckBox('Mean-adjust')
+        self._mean_adj_box.setChecked(True)
+        self.addWidget(self._mean_adj_box)
+        self._rescale_box = QCheckBox('Rescale')
+        self._rescale_box.setChecked(True)
+        self.addWidget(self._rescale_box)
+        self._sign_box = QComboBox()
+        self._sign_box.addItems(['positive', 'negative', 'absolute'])
+        self.addWidget(self._sign_box)
+        self._tophat_box = QCheckBox('Tophat')
+        self._tophat_box.setChecked(False)
+        self.addWidget(self._tophat_box)
+        self._tophat_fp = QSpinBox(minimum=0, maximum=10, value=1)
+        self.addWidget(QLabel('Footprint:'))
+        self.addWidget(self._tophat_fp)
+
     def query_frame(self, z: int) -> np.ndarray:
         frame = self._normalize_img(self._video[z]) - self._median_background
-        frame *= self._mean_intensity / frame.mean()
+        if self._mean_adj_box.isChecked():
+            frame *= self._mean_intensity / frame.mean()
+        if self._sign_box.currentText() == 'positive':
+            frame = np.where(frame < 0, 0, frame)
+        elif self._sign_box.currentText() == 'negative':
+            frame = -np.where(frame > 0, 0, frame)
+        else:
+            frame = np.abs(frame)
+        if self._tophat_box.isChecked():
+            footprint = morphology.disk(self._tophat_fp.value())
+            frame = morphology.white_tophat(frame, footprint)
+        if self._rescale_box.isChecked():
+            frame /= frame.max()
         return frame
 
 class VideoSegmentorApp(ImageSegmentorApp):
@@ -70,7 +99,7 @@ class VideoSegmentorApp(ImageSegmentorApp):
         self._motion_threshold = 0.12  # In [0,1] range
         self._apply_threshold = False
         
-        super().__init__(video_path, desc, *args, **kwargs)
+        super().__init__(video_path, desc, *args, grayscale=True, **kwargs)
 
         assert self._zmax > 1, f'Expected video with multiple frames, got {self._zmax} frames'
         print(f'Initialized VideoSegmentorApp for {self._zmax} frame video')
@@ -141,9 +170,9 @@ class VideoSegmentorApp(ImageSegmentorApp):
     def _export(self):
         exp_img = []
         for z in tqdm(range(self._zmin, self._zmax), desc='Exporting video'):
-            exp_img.append(self._motion_detector.query_frame(z))
+            exp_img.append(self._query_frame(z))
         exp_img = np.stack(exp_img)
-        # exp_img = (exp_img * 255).astype(np.uint8)
+        exp_img = (exp_img * 255).astype(np.uint8)
         orig_name = os.path.splitext(self._img_path)[0] # Use QT dialog for save path
         save_path, _ = QtWidgets.QFileDialog.getSaveFileName(self, 'Save motion video', f'{orig_name}.motion.tif', 'TIFF (*.tif)')
         if save_path:  # Only save if user didn't cancel
@@ -159,25 +188,7 @@ class VideoSegmentorApp(ImageSegmentorApp):
     ''' Overrides'''
 
     def _update_current_frame(self):
-        frame = self._query_frame(self._z)
-        # Apply thresholding and morphological operations if enabled
-        if self._apply_threshold:
-            frame = np.where(frame > self._motion_threshold, frame, 0)
-            
-            # # Create binary mask and apply morphological operations
-            # # Handle both grayscale (2D) and color (3D) frames
-            # if frame.ndim == 3:
-            #     mask = np.any(frame > 0, axis=2)
-            # else:
-            #     mask = frame > 0
-            # mask = scipy.ndimage.binary_opening(mask, structure=np.ones((3, 3)))
-            # mask = scipy.ndimage.binary_closing(mask, structure=np.ones((5, 5)))
-            # if frame.ndim == 3:
-            #     frame[~mask] = 0
-            # else:
-            #     frame = np.where(mask, frame, 0)
-        # assert self._img.dtype == frame.dtype
-        self._creator.setData(frame, self._rois[self._z])
+        self._creator.setData(self._query_frame(self._z), self._rois[self._z])
 
 if __name__ == '__main__':
     import sys
