@@ -48,7 +48,7 @@ class ImageSegmentorApp(SaveableApp):
             self._z_slider.hide()
         else:
             print(f'Received z-stack with {self._zmax} slices, enabling z-slider')
-            self._z_slider.setData(0, self._zmax-1, self._z)
+            self._z_slider.setData(0, self._zmax-1, 0)
             
 
         # Listeners
@@ -131,7 +131,7 @@ class ImageSegmentorApp(SaveableApp):
                 self._update_current_frame()
 
     def _update_current_frame(self):
-        self._creator.setData(self._img[z], self._rois[z])
+        self._creator.setData(self._img[self._z], self._rois[self._z])
 
     @property
     def next_label(self) -> int:
