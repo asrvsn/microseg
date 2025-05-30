@@ -395,8 +395,8 @@ class ROIsCreator(VLayoutWidget):
         '''
         Process add() signal from segmentor, which asynchronously bubbles add() signal from child.
         '''
-        assert self._is_proposing
-        self._set_proposing(False)
+        if self._is_proposing:
+            self._set_proposing(False)
         if len(rois) == 0: 
             # Short-circuit at this level
             self.setROIs(self._rois)
@@ -408,8 +408,8 @@ class ROIsCreator(VLayoutWidget):
         '''
         Process cancel() signal from segmentor, does not fire add() signal to parent.
         '''
-        assert self._is_proposing
-        self._set_proposing(False)
+        if self._is_proposing:
+            self._set_proposing(False)
         self.setROIs(self._rois)
 
     def _set_proposing(self, bit: bool):

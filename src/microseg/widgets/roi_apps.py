@@ -161,6 +161,54 @@ class ImageSegmentorApp(SaveableApp):
         ]
         self.refreshROIs(push=True)
 
+class FlatImageSegmentorApp(ImageSegmentorApp):
+    ''' All ROIs apply to all frames of an stack '''
+
+    def __init__(self, *args, desc: str='rois', **kwargs):
+        super().__init__(*args, desc=desc, **kwargs)
+
+    ''' Overrides '''
+
+    def copyIntoState(self, state: List[ROI]):
+        self._rois = [r.copy() for r in state]
+        self.refreshROIs(push=False)
+
+    def copyFromState(self) -> List[ROI]:
+        return [r.copy() for r in self._rois]
+
+    def readData(self, path: str) -> List[ROI]:
+        return pickle.load(open(path, 'rb'))
+    
+    def writeData(self, path: str, rois: List[ROI]):
+        pickle.dump(rois, open(path, 'wb'))
+
+    def refreshROIs(self, push: bool=True):
+        self._creator.setROIs(self._rois)
+        if push:
+            self.pushEdit()
+
+    ''' Private overrides '''
+
+    def _pre_super_init(self):
+        self._rois = []
+
+    def _update_current_frame(self):
+        self._creator.setImage(self._img[self._z])
+
+    @property
+    def next_label(self) -> int:
+        return max([r.lbl for r in self._rois], default=-1) + 1
+
+    def _add(self, rois: List[ROI]):
+        l = self.next_label
+        lrois = [LabeledROI(l+i, r) for i, r in enumerate(rois)]
+        self._rois.extend(lrois)
+        self.refreshROIs(push=True)
+
+    def _delete(self, rois: Set[int]):
+        self._rois = [r for r in self._rois if not (r.lbl in rois)]
+        self.refreshROIs(push=True)
+
 class ZStackObjectViewer(SaveableWidget):
     '''
     3D viewer of multiple objects with current z-plane rendered

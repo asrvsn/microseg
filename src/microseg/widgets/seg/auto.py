@@ -401,7 +401,7 @@ class AutoSegmentorWidget(SegmentorWidget):
         super().reset_state()
         self._compute_btn.setEnabled(False)
         if hasattr(self, '_mask_proc'):
-            self._mask_proc.reset_state()
+            self._mask_proc._reset_state()
 
     def on_rois_created(self, rois: List[ROI]):
         print(f'Got {len(rois)} proposals')
