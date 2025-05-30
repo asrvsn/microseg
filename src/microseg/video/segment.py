@@ -10,7 +10,7 @@ from qtpy import QtWidgets
 from tqdm import tqdm
 import tifffile
 import os
-from skimage import morphology
+from skimage import morphology, exposure
 
 from microseg.widgets.roi_apps import ImageSegmentorApp
 from microseg.widgets.base import HLayoutWidget
@@ -67,6 +67,11 @@ class MedianMotionDetector(MotionDetector):
         self._tophat_fp = QSpinBox(minimum=0, maximum=10, value=1)
         self.addWidget(QLabel('Footprint:'))
         self.addWidget(self._tophat_fp)
+        self._clahe_box = QCheckBox('CLAHE')
+        self.addWidget(self._clahe_box)
+        self._clahe_clip_limit = QDoubleSpinBox(minimum=0.0, maximum=1, value=0.03, singleStep=0.01)
+        self.addWidget(QLabel('Clip limit:'))
+        self.addWidget(self._clahe_clip_limit)
 
     def query_frame(self, z: int) -> np.ndarray:
         frame = self._normalize_img(self._video[z]) - self._median_background
@@ -78,6 +83,9 @@ class MedianMotionDetector(MotionDetector):
             frame = -np.where(frame > 0, 0, frame)
         else:
             frame = np.abs(frame)
+        if self._clahe_box.isChecked():
+            frame /= frame.max()
+            frame = exposure.equalize_adapthist(frame, clip_limit=self._clahe_clip_limit.value())
         if self._tophat_box.isChecked():
             footprint = morphology.disk(self._tophat_fp.value())
             frame = morphology.white_tophat(frame, footprint)
