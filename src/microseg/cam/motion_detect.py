@@ -33,8 +33,11 @@ DEFAULT_MOTION_TIMEOUT_MINUTES: float = 1.0
 DEFAULT_MAX_RECORDING_HOURS: float = 1.0
 DEFAULT_CAMERA_INDEX: int = 0
 
-MIN_CONTOUR_AREA: int = 1000 # Minimum area for a contour to be considered motion
-VIDEO_QUEUE_SIZE: int = 60 # Max number of frames to buffer for video writing
+# Motion detection parameters 
+MIN_CONTOUR_AREA: int = 2500  # Larger area 
+MIN_CONTOUR_WIDTH: int = 30   # Minimum width 
+MIN_CONTOUR_HEIGHT: int = 60  # Minimum height 
+VIDEO_QUEUE_SIZE: int = 60    # Max number of frames to buffer for video writing
 
 
 class MotionDetector:
@@ -79,13 +82,13 @@ class MotionDetector:
         self.recording_fps: int = recording_fps
         
         # Pre-allocate reusable objects
-        self.motion_kernel: np.ndarray = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        self.motion_kernel: np.ndarray = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))  # Larger kernel for better results
         
         # Motion detection parameters
         self.bg_subtractor: cv2.BackgroundSubtractorMOG2 = cv2.createBackgroundSubtractorMOG2(
-            detectShadows=False,
-            varThreshold=25,
-            history=200
+            detectShadows=True,    # Enable shadow detection to reduce false positives
+            varThreshold=75,       # Higher threshold for better stability against lighting changes
+            history=500           # Longer history for more stable background model
         )
         self.min_contour_area: int = MIN_CONTOUR_AREA
         
@@ -142,7 +145,7 @@ class MotionDetector:
         # Add to __init__:
         self.video_writer_lock: threading.Lock = threading.Lock()
 
-        self.warmup_frames: int = 30  # Number of frames to learn background
+        self.warmup_frames: int = 60  
         self.warmup_counter: int = 0
         self.is_warmed_up: bool = False
 
@@ -179,7 +182,7 @@ class MotionDetector:
         
     def detect_motion(self, frame: np.ndarray) -> bool:
         """
-        Detect motion in the given frame.
+        Detect motion in the given frame using optimized parameters.
 
         Args:
             frame: Input frame from camera (BGR format).
@@ -189,15 +192,48 @@ class MotionDetector:
         """
         small_frame: np.ndarray = cv2.resize(frame, (self.motion_width, self.motion_height))
         fg_mask: np.ndarray = self.bg_subtractor.apply(small_frame) 
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, self.motion_kernel)
         
-        motion_pixels: int = cv2.countNonZero(fg_mask)
-        # Adjust motion area based on the square of the detection scale factor
-        # to compare it with min_contour_area defined for the original resolution.
-        # This is an approximation for actual contour area.
-        effective_motion_area: float = motion_pixels / (self.motion_detection_scale ** 2) if self.motion_detection_scale > 0 else motion_pixels
+        # Enhanced morphological operations 
+        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, self.motion_kernel)  # Fill gaps
+        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, self.motion_kernel)   # Remove noise
         
-        return effective_motion_area > self.min_contour_area
+        # Find contours for shape analysis
+        contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        # Early exit if no contours found
+        if not contours:
+            return False
+        
+        # Pre-calculate constants for optimization
+        scale_factor = self.motion_detection_scale ** 2
+        inv_scale = 1.0 / self.motion_detection_scale
+        max_area = (self.frame_width * self.frame_height) * 0.3
+        
+        for contour in contours:
+            # Quick area check first (cheapest operation)
+            scaled_area = cv2.contourArea(contour) / scale_factor
+            if scaled_area <= self.min_contour_area or scaled_area > max_area:
+                continue
+                
+            # Get bounding rectangle for size and aspect ratio analysis
+            x, y, w, h = cv2.boundingRect(contour)
+            
+            # Scale dimensions back to original resolution
+            scaled_width = w * inv_scale
+            scaled_height = h * inv_scale
+            
+            # Size requirements
+            if scaled_width < MIN_CONTOUR_WIDTH or scaled_height < MIN_CONTOUR_HEIGHT:
+                continue
+                
+            # Aspect ratio check (reject objects that are too wide)
+            if scaled_height / scaled_width < 0.8:
+                continue
+            
+            # Valid motion detected
+            return True
+        
+        return False
         
     def _video_writer_thread(self) -> None:
         """Background thread for writing video frames from the queue."""
