@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Default values for parameters
 DEFAULT_MOTION_CHECK_INTERVAL: int = 3
 DEFAULT_MOTION_DETECTION_SCALE: float = 0.5
-DEFAULT_RECORDING_SCALE: float = 0.5
+DEFAULT_RECORDING_SCALE: float = 0.25
 DEFAULT_RECORDING_FPS: int = 24
 DEFAULT_MOTION_TIMEOUT_MINUTES: float = 1.0
 DEFAULT_MAX_RECORDING_HOURS: float = 1.0
