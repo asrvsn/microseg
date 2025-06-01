@@ -85,11 +85,7 @@ class MotionDetector:
         self.motion_kernel: np.ndarray = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))  # Larger kernel for better results
         
         # Motion detection parameters
-        self.bg_subtractor: cv2.BackgroundSubtractorMOG2 = cv2.createBackgroundSubtractorMOG2(
-            detectShadows=True,    # Enable shadow detection to reduce false positives
-            varThreshold=75,       # Higher threshold for better stability against lighting changes
-            history=500           # Longer history for more stable background model
-        )
+        self._initialize_and_reset_bg_subtractor()
         self.min_contour_area: int = MIN_CONTOUR_AREA
         
         # Recording state
@@ -148,6 +144,10 @@ class MotionDetector:
         self.warmup_frames: int = 60  
         self.warmup_counter: int = 0
         self.is_warmed_up: bool = False
+        
+        # Memory management for long-running operation
+        self.frame_process_count: int = 0
+        self.bg_reset_interval: int = 50000  # Reset background subtractor every ~23 hours at 30fps
 
         if not (0.1 <= recording_scale <= 1.0):
             raise ValueError(f"recording_scale must be between 0.1 and 1.0, got {recording_scale}")
@@ -161,6 +161,17 @@ class MotionDetector:
             raise ValueError(f"max_recording_hours must be between 0.1 and 24, got {max_recording_hours}")
         if not (1 <= motion_check_interval <= 100):
             raise ValueError(f"motion_check_interval must be between 1 and 100, got {motion_check_interval}")
+
+    def _initialize_and_reset_bg_subtractor(self) -> None:
+        """Initializes or re-initializes the background subtractor and resets warmup state."""
+        logging.debug("Initializing background subtractor and resetting warmup state.")
+        self.bg_subtractor: cv2.BackgroundSubtractorMOG2 = cv2.createBackgroundSubtractorMOG2(
+            detectShadows=True,
+            varThreshold=75,
+            history=500
+        )
+        self.is_warmed_up = False
+        self.warmup_counter = 0
 
     def _log_estimated_file_size_reduction(self) -> None:
         """Helper to log estimated file size reduction based on current settings."""
@@ -200,8 +211,9 @@ class MotionDetector:
         # Find contours for shape analysis
         contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        # Early exit if no contours found
+        # Early exit if no contours found - cleanup and return
         if not contours:
+            del small_frame, fg_mask  # Explicit cleanup of temporary arrays
             return False
         
         # Pre-calculate constants for optimization
@@ -323,13 +335,15 @@ class MotionDetector:
         # This prevents old frames from being written to a new file if recording restarts quickly
         if not self.frame_queue.empty():
             logging.warning(f"Clearing {self.frame_queue.qsize()} frames from queue after stopping recording.")
-            remaining_frames = 0
+            frames_cleared = 0
             while not self.frame_queue.empty():
                 try:
-                    self.frame_queue.get_nowait()
-                    remaining_frames += 1
+                    discarded_frame = self.frame_queue.get_nowait()
+                    del discarded_frame  # Explicitly delete frame to free memory
+                    frames_cleared += 1
                 except Empty:
                     break
+            logging.debug(f"Cleared {frames_cleared} frames from queue.")
 
         if self.recording_start_time and self.current_video_path:
             duration: float = time.time() - self.recording_start_time
@@ -397,12 +411,21 @@ class MotionDetector:
         current_time: float = time.time()
         motion_detected_this_check: bool = False
         
+        # Increment frame process counter for memory management
+        self.frame_process_count += 1
+        
+        # Periodic memory management: reset background subtractor to prevent gradual memory growth
+        if self.frame_process_count % self.bg_reset_interval == 0:
+            logging.info(f"Resetting background subtractor after {self.frame_process_count} frames for memory management.")
+            self._initialize_and_reset_bg_subtractor()
+        
         # Warm-up period: let background subtractor learn the scene
         if not self.is_warmed_up:
             self.warmup_counter += 1
             # Feed frames to background subtractor during warmup but don't check for motion
             small_frame = cv2.resize(frame, (self.motion_width, self.motion_height))
             self.bg_subtractor.apply(small_frame)  # Train background model
+            del small_frame # Explicit cleanup of temporary array
             
             if self.warmup_counter >= self.warmup_frames:
                 self.is_warmed_up = True
