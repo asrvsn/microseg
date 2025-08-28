@@ -60,12 +60,13 @@ if __name__ == '__main__':
                 dpi_x = (img_info['width'] / img_rect.width) * 72
                 dpi_y = (img_info['height'] / img_rect.height) * 72
                 dpi_avg = (dpi_x + dpi_y) / 2
+                size_mb = len(img_info['image']) / (1024 * 1024)
                 
                 if args.journal == "PNAS":
                     status = "✓" if dpi_avg >= 300 else "✗"
                 else:
                     status = ""
-                print(f"  Image {i+1}: {dpi_avg:.0f} DPI {status}")
+                print(f"  Image {i+1}: {dpi_avg:.0f} DPI, {size_mb:.2f} MB {status}")
                 
                 # Show image if requested
                 if args.show:

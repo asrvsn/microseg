@@ -27,6 +27,8 @@ dependencies = [
     # Image processing and computer vision
     "opencv-python",  # cv2
     "Pillow",        # PIL
+    "pillow-heif",   # HEIC/HEIF support for Pillow
+    "pillow-heif",
     "PyMuPDF",       # pymupdf
     "scikit-image",  # skimage
     "aicsimageio",
