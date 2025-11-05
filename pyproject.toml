@@ -28,7 +28,6 @@ dependencies = [
     "opencv-python",  # cv2
     "Pillow",        # PIL
     "pillow-heif",   # HEIC/HEIF support for Pillow
-    "pillow-heif",
     "PyMuPDF",       # pymupdf
     "scikit-image",  # skimage
     "aicsimageio",
@@ -46,7 +45,7 @@ dependencies = [
     
     # Custom dependencies
     "matgeo",
-    "asrvsn_math @ git+https://github.com/asrvsn/asrvsn_math.git"
+    "asrvsn_math @ git+https://github.com/asrvsn/asrvsn_math@master",
 ]   
 
 [project.urls]
