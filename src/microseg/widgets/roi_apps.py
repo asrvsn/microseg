@@ -13,7 +13,6 @@ import skimage.exposure
 import skimage.filters as skfilt
 import scipy
 import scipy.ndimage
-import pyclesperanto_prototype as cle
 import skimage
 import skimage.morphology
 import numpy as np
@@ -23,6 +22,63 @@ from .pg import *
 from .roi_image import *
 from .pg_gl import *
 from microseg.utils.data import load_stack, get_voxel_size
+
+class ImageViewerApp(MainWindow):
+    '''
+    Simple usable app for viewing single (or stacks) of images in ZXYC format
+    '''
+    def __init__(self, img_path: str, desc: str='rois', *args, grayscale: bool=False, **kwargs):
+        # State
+        self._z = None
+        self._img_path = img_path
+        self._img = load_stack(img_path, fmt='ZXYC')
+        if self._img.ndim == 4 and self._img.shape[3] == 1:
+            self._img = self._img[:, :, :, 0] # Simplify things...
+        if grayscale:
+            if self._img.ndim == 4:
+                assert self._img.shape[3] == 3, f'Unexpected number of channels for grayscale conversion, got image shape: {self._img.shape}'
+                self._img = np.array([rgb_to_gray(img) for img in self._img])
+            else:
+                assert self._img.ndim == 3, 'Expected 3D image'
+        self._zmax = self._img.shape[0]
+        
+        # Widgets
+        self._main = VLayoutWidget()
+        self._viewer = ImagePlotWidget()
+        self._main._layout.addWidget(self._viewer)
+        
+        self._z_slider = IntegerSlider(mode='scroll')
+        self._main._layout.addWidget(self._z_slider)
+        if self._zmax == 1:
+            print(f'Received standard 2D image, disabling z-slider')
+            self._z_slider.hide()
+        else:
+            print(f'Received z-stack with {self._zmax} slices, enabling z-slider')
+            self._z_slider.setData(0, self._zmax-1, 0)
+            
+
+        # Listeners
+        self._z_slider.valueChanged.connect(lambda z: self._set_z(z))
+
+        # Run data load and rest of initialization in superclass
+        self._set_z(0)
+        super().__init__(*args, **kwargs)
+        self.setCentralWidget(self._main)
+
+    ''' Private methods '''
+
+    def _set_z(self, z: int, set_slider: bool=False):
+        z = max(0, min(z, self._zmax-1))
+        if z != self._z:
+            if set_slider:
+                self._z_slider.setValue(z)  # Callback will go to next branch
+            else:
+                self._z = z
+                self._update_current_frame()
+
+    def _update_current_frame(self):
+        self._viewer.setImage(self._img[self._z])
+
 
 class ImageSegmentorApp(SaveableApp):
     '''
@@ -431,6 +487,7 @@ class ZStackObjectViewer(SaveableWidget):
 
         # Background subtraction
         if self._background_box.isChecked():
+            # import pyclesperanto_prototype as cle
             data = cle.top_hat_box(data, radius_x=5, radius_y=5, radius_z=5).get()
 
         # Boundary

@@ -187,7 +187,10 @@ def load_stack(path: str, imscale: Optional[Tuple[float, float]]=None, fmt='ZXYC
         img = seg.zproj.copy()
         # Reshape CXY to ZXYC
         img = np.array([img.transpose(1, 2, 0)])
-        return img
+    elif fext in ['.npy']:
+        img = np.load(path)
+        if img.ndim == 3:
+            img = img[:, :, :, np.newaxis] # Assume image is ZXY
     else:
         img = load_XY_image(path, imscale=imscale, gray=False)
         img = np.array([img])
